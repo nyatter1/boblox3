@@ -1199,7 +1199,7 @@ export default function BaseplateGame({
       if (isPausedRef.current) return;
 
       keysPressedRef.current[e.key.toLowerCase()] = true;
-      if (e.code === 'Space') {
+      if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
         e.preventDefault();
         triggerJump();
       }
@@ -1677,16 +1677,16 @@ export default function BaseplateGame({
         lastStandingPartIdRef.current = standingPartId;
 
         // Apply gravity if in the air or jumping
-        if (!isGroundedRef.current || playerVelocityYRef.current > 0.1) {
+        if (!isGroundedRef.current || playerVelocityYRef.current !== 0) {
           playerVelocityYRef.current -= 34 * delta;
           playerPosRef.current.y += playerVelocityYRef.current * delta;
         }
 
-        if (playerPosRef.current.y <= floorY + 0.2) {
+        if (playerVelocityYRef.current <= 0 && playerPosRef.current.y <= floorY + 0.08) {
           playerPosRef.current.y = floorY;
           playerVelocityYRef.current = 0;
           isGroundedRef.current = true;
-        } else if (playerVelocityYRef.current > 0.1) {
+        } else if (playerVelocityYRef.current > 0) {
           isGroundedRef.current = false;
         }
 

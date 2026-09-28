@@ -2205,11 +2205,11 @@ part.Touched:Connect(onTouch)`,
 
         lastStandingPartIdRef.current = standingPartId;
 
-        if (playerPosRef.current.y <= floorY + 0.25) {
+        if (playerVelocityYRef.current <= 0 && playerPosRef.current.y <= floorY + 0.08) {
           playerPosRef.current.y = floorY;
           playerVelocityYRef.current = 0;
           isGroundedRef.current = true;
-        } else {
+        } else if (playerVelocityYRef.current > 0) {
           isGroundedRef.current = false;
         }
 

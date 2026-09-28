@@ -289,7 +289,11 @@ export class LuaScriptRunner {
   public hasClickDetector(partId: string): boolean {
     if (this.context) {
       const part = this.context.parts.get(partId);
-      if (part?.hasClickDetector) return true;
+      if (part?.hasClickDetector || part?.clickDetector) return true;
+      if (part) {
+        const nameListeners = this.clickListeners.get(part.name.toLowerCase());
+        if (nameListeners && nameListeners.length > 0) return true;
+      }
     }
     const list = this.clickListeners.get(partId);
     return !!(list && list.length > 0);
@@ -297,10 +301,19 @@ export class LuaScriptRunner {
 
   public triggerClick(partId: string, playerProxy?: any) {
     if (!this.isRunning) return;
-    const listeners = this.clickListeners.get(partId);
-    if (listeners && listeners.length > 0) {
+    const listenersById = this.clickListeners.get(partId) || [];
+    let listenersByName: Array<(player: any) => void> = [];
+    if (this.context) {
+      const part = this.context.parts.get(partId);
+      if (part) {
+        listenersByName = this.clickListeners.get(part.name.toLowerCase()) || [];
+      }
+    }
+
+    const allListeners = Array.from(new Set([...listenersById, ...listenersByName]));
+    if (allListeners.length > 0) {
       const p = playerProxy || (this.context ? createHumanoidHitProxy(this.context.humanoid).Parent : null);
-      for (const cb of listeners) {
+      for (const cb of allListeners) {
         try {
           cb(p);
         } catch (e: any) {
@@ -673,12 +686,7 @@ export class LuaScriptRunner {
           CursorIcon: '',
           MouseClick: {
             Connect: (callback: (player: any) => void) => {
-              let listeners = this.clickListeners.get(pId);
-              if (!listeners) {
-                listeners = [];
-                this.clickListeners.set(pId, listeners);
-              }
-              listeners.push(callback);
+              registerClickCallback(pId, part.name, callback);
               return {
                 Disconnect: () => {
                   const arr = this.clickListeners.get(pId);
@@ -777,27 +785,122 @@ export class LuaScriptRunner {
 
     const scriptParentProxy = parentPart ? createPartProxy(parentPart, scriptParentPartId) : null;
 
-    // Find first child helper
+    // Helper to register click callback by part ID and name
+    const registerClickCallback = (targetPId: string, targetName: string, callback: (player: any) => void) => {
+      let listenersById = this.clickListeners.get(targetPId);
+      if (!listenersById) {
+        listenersById = [];
+        this.clickListeners.set(targetPId, listenersById);
+      }
+      if (!listenersById.includes(callback)) listenersById.push(callback);
+
+      if (targetName) {
+        const lowerName = targetName.toLowerCase();
+        let listenersByName = this.clickListeners.get(lowerName);
+        if (!listenersByName) {
+          listenersByName = [];
+          this.clickListeners.set(lowerName, listenersByName);
+        }
+        if (!listenersByName.includes(callback)) listenersByName.push(callback);
+      }
+
+      const p = ctx.parts.get(targetPId);
+      if (p) {
+        p.hasClickDetector = true;
+        ctx.onPartUpdated?.(targetPId, { hasClickDetector: true });
+      }
+    };
+
+    // Find part helper
     const findPartByName = (name: string) => {
+      const lower = (name || '').toLowerCase();
       for (const [id, p] of ctx.parts.entries()) {
-        if (p.name.toLowerCase() === name.toLowerCase()) {
+        if (p.name.toLowerCase() === lower || id === name) {
           return createPartProxy(p, id);
         }
       }
       return null;
     };
 
-    const workspaceProxy: any = {
-      Name: 'Workspace',
-      FindFirstChild: (name: string) => findPartByName(name),
-      findFirstChild: (name: string) => findPartByName(name),
-      GetChildren: () => Array.from(ctx.parts.entries()).map(([id, p]) => createPartProxy(p, id)),
+    const workspaceProxy: any = new Proxy(
+      {
+        Name: 'Workspace',
+        FindFirstChild: (name: string) => findPartByName(name),
+        findFirstChild: (name: string) => findPartByName(name),
+        WaitForChild: (name: string) => findPartByName(name),
+        waitForChild: (name: string) => findPartByName(name),
+        FindFirstChildOfClass: (className: string) => findPartByName(className),
+        GetChildren: () => Array.from(ctx.parts.entries()).map(([id, p]) => createPartProxy(p, id)),
+        getChildren: () => Array.from(ctx.parts.entries()).map(([id, p]) => createPartProxy(p, id)),
+      },
+      {
+        get(target: any, prop: string) {
+          if (prop in target) return target[prop];
+          if (typeof prop === 'string') {
+            const found = findPartByName(prop);
+            if (found) return found;
+          }
+          return undefined;
+        },
+      }
+    );
+
+    const serverScriptServiceProxy: any = new Proxy(
+      {
+        Name: 'ServerScriptService',
+        FindFirstChild: (name: string) => ({ Name: name }),
+        findFirstChild: (name: string) => ({ Name: name }),
+        WaitForChild: (name: string) => ({ Name: name }),
+      },
+      {
+        get(target: any, prop: string) {
+          if (prop in target) return target[prop];
+          return { Name: prop };
+        },
+      }
+    );
+
+    const BrickColor = {
+      new: (val: any) => {
+        if (typeof val === 'string') {
+          const v = val.toLowerCase();
+          if (v.includes('red')) return Color3.fromRGB(235, 45, 45);
+          if (v.includes('blue')) return Color3.fromRGB(45, 120, 235);
+          if (v.includes('green')) return Color3.fromRGB(45, 200, 80);
+          if (v.includes('yellow')) return Color3.fromRGB(240, 210, 40);
+          if (v.includes('black')) return Color3.fromRGB(25, 25, 25);
+          if (v.includes('white')) return Color3.fromRGB(245, 245, 245);
+          return Color3.fromHex(val);
+        }
+        return Color3.fromRGB(160, 160, 160);
+      },
+      Red: () => Color3.fromRGB(235, 45, 45),
+      Blue: () => Color3.fromRGB(45, 120, 235),
+      Green: () => Color3.fromRGB(45, 200, 80),
+      Yellow: () => Color3.fromRGB(240, 210, 40),
+      White: () => Color3.fromRGB(245, 245, 245),
+      Black: () => Color3.fromRGB(25, 25, 25),
+      random: () => Color3.fromRGB(Math.round(Math.random() * 255), Math.round(Math.random() * 255), Math.round(Math.random() * 255)),
+      Random: () => Color3.fromRGB(Math.round(Math.random() * 255), Math.round(Math.random() * 255), Math.round(Math.random() * 255)),
     };
 
-    // Allow workspace.PartName access
-    for (const [id, p] of ctx.parts.entries()) {
-      workspaceProxy[p.name] = createPartProxy(p, id);
-    }
+    const gameProxy: any = {
+      Workspace: workspaceProxy,
+      workspace: workspaceProxy,
+      ServerScriptService: serverScriptServiceProxy,
+      serverScriptService: serverScriptServiceProxy,
+      ReplicatedStorage: { Name: 'ReplicatedStorage' },
+      ServerStorage: { Name: 'ServerStorage' },
+      Players: { Name: 'Players', LocalPlayer: createHumanoidHitProxy(ctx.humanoid).Parent, localPlayer: createHumanoidHitProxy(ctx.humanoid).Parent },
+      GetService: (serviceName: string) => {
+        const s = (serviceName || '').toLowerCase();
+        if (s === 'tweenservice') return TweenService;
+        if (s === 'workspace') return workspaceProxy;
+        if (s === 'serverscriptservice') return serverScriptServiceProxy;
+        return { Name: serviceName };
+      },
+      getService: (serviceName: string) => gameProxy.GetService(serviceName),
+    };
 
     const TweenService = {
       Create: (partObj: any, tweenInfo: any, goals: any) => {
@@ -954,19 +1057,6 @@ export class LuaScriptRunner {
       fromHex: (hex: string) => ({ hex }),
     };
 
-    const gameProxy: any = {
-      Workspace: workspaceProxy,
-      workspace: workspaceProxy,
-      ServerScriptService: { Name: 'ServerScriptService' },
-      GetService: (serviceName: string) => {
-        const s = serviceName.toLowerCase();
-        if (s === 'tweenservice') return TweenService;
-        if (s === 'workspace') return workspaceProxy;
-        return { Name: serviceName };
-      },
-      getService: (serviceName: string) => gameProxy.GetService(serviceName),
-    };
-
     const waitHelper = (seconds: number = 0.03): Promise<number> => {
       const s = Math.max(0.01, Number(seconds) || 0.03);
       return new Promise((resolve) => {
@@ -1048,6 +1138,7 @@ export class LuaScriptRunner {
         'Vector3',
         'CFrame',
         'Color3',
+        'BrickColor',
         'TweenService',
         'TweenInfo',
         'Enum',
@@ -1161,6 +1252,7 @@ export class LuaScriptRunner {
         Vector3,
         CFrame,
         Color3,
+        BrickColor,
         TweenService,
         TweenInfo,
         enumProxy,
