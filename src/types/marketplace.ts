@@ -207,12 +207,33 @@ export async function publishItemToMarketplace(item: MarketplaceClothingItem) {
 }
 
 /**
- * Buy/Get a marketplace item (Free).
- * Saves to user inventory and increments the bought count in Firestore and LocalStorage.
+ * Buy/Get a marketplace item (Free or Paid with Bobux).
+ * Deducts Bobux from buyer if paid, awards Bobux to creator,
+ * saves item permanently to inventory, and increments bought count.
  */
 export async function buyMarketplaceItem(
-  item: MarketplaceClothingItem
+  item: MarketplaceClothingItem,
+  buyerUsername?: string
 ): Promise<MarketplaceClothingItem> {
+  // Handle Bobux payment if price > 0
+  const price = item.price || 0;
+  if (price > 0 && buyerUsername) {
+    try {
+      const { getSavedBobux, saveBobux } = await import('../components/BobuxCurrency');
+      const currentBuyerBobux = getSavedBobux(buyerUsername);
+      if (currentBuyerBobux >= price) {
+        saveBobux(currentBuyerBobux - price, buyerUsername);
+        // Credit the creator if known and different
+        if (item.creatorUsername && item.creatorUsername.toLowerCase() !== buyerUsername.toLowerCase()) {
+          const currentCreatorBobux = getSavedBobux(item.creatorUsername);
+          saveBobux(currentCreatorBobux + price, item.creatorUsername);
+        }
+      }
+    } catch (e) {
+      console.warn('Bobux transaction note:', e);
+    }
+  }
+
   // 1. Add permanently to user inventory
   if (item.type === 'shirt') {
     saveShirtToInventory({

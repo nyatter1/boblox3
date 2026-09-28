@@ -170,8 +170,8 @@ export default function FriendsTopBar({
       ) : (
         <div className="flex items-center gap-3 overflow-x-auto pb-1 pt-0.5 scrollbar-thin scrollbar-thumb-purple-900 scrollbar-track-transparent">
           {friends.map((friend) => {
-            const isInGame = Boolean(friend.currentExperienceId);
-            const isOnline = Date.now() - (friend.lastActive || 0) < 60000 || isInGame;
+            const isOnline = Boolean(friend.lastActive && Date.now() - friend.lastActive < 1000 * 150);
+            const isInGame = isOnline && Boolean(friend.currentExperienceId);
 
             return (
               <div

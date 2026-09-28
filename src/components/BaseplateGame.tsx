@@ -1167,6 +1167,7 @@ export default function BaseplateGame({
       faceId: selectedFaceId,
       hairId: selectedHairId,
       hairColor,
+      customHairObj,
       accessoryId: selectedAccessoryId,
       shirtUrl: shirtDataUrl,
       pantsUrl: pantsDataUrl,
@@ -1541,10 +1542,10 @@ export default function BaseplateGame({
         if (keys['d'] || keys['arrowright']) inputRight += 1;
         if (keys['a'] || keys['arrowleft']) inputRight -= 1;
 
-        const isMoving = Math.abs(inputForward) > 0.05 || Math.abs(inputRight) > 0.05;
+        const isMoving = (Math.abs(inputForward) > 0.05 || Math.abs(inputRight) > 0.05) && !isDeadRef.current;
         isMovingRef.current = isMoving;
 
-        if (isMoving) {
+        if (isMoving && !isDeadRef.current) {
           const len = Math.hypot(inputForward, inputRight);
           const normF = inputForward / len;
           const normR = inputRight / len;

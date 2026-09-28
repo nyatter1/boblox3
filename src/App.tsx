@@ -497,6 +497,7 @@ export default function App() {
 
   const handleUpdateAvatarColors = (newColors: AvatarColors) => {
     setAvatarColors(newColors);
+    setCurrentUser((prev) => (prev ? { ...prev, avatarColors: newColors } : prev));
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newColors));
     } catch (e) {
@@ -509,6 +510,7 @@ export default function App() {
 
   const handleUpdateFaceId = (faceId: string) => {
     setSelectedFaceId(faceId);
+    setCurrentUser((prev) => (prev ? { ...prev, selectedFaceId: faceId } : prev));
     try {
       localStorage.setItem(FACE_STORAGE_KEY, faceId);
     } catch (e) {
@@ -521,6 +523,7 @@ export default function App() {
 
   const handleUpdateShirt = (url: string | null) => {
     setShirtDataUrl(url);
+    setCurrentUser((prev) => (prev ? { ...prev, shirtDataUrl: url } : prev));
     try {
       if (url) {
         localStorage.setItem(SHIRT_STORAGE_KEY, url);
@@ -537,6 +540,7 @@ export default function App() {
 
   const handleUpdatePants = (url: string | null) => {
     setPantsDataUrl(url);
+    setCurrentUser((prev) => (prev ? { ...prev, pantsDataUrl: url } : prev));
     try {
       if (url) {
         localStorage.setItem(PANTS_STORAGE_KEY, url);
@@ -553,6 +557,7 @@ export default function App() {
 
   const handleUpdateHair = (hairId: string) => {
     setSelectedHairId(hairId);
+    setCurrentUser((prev) => (prev ? { ...prev, selectedHairId: hairId } : prev));
     try {
       localStorage.setItem(HAIR_STORAGE_KEY, hairId);
     } catch (e) {
@@ -565,6 +570,7 @@ export default function App() {
 
   const handleUpdateHairColor = (colorHex: string) => {
     setHairColor(colorHex);
+    setCurrentUser((prev) => (prev ? { ...prev, hairColor: colorHex } : prev));
     try {
       localStorage.setItem(HAIR_COLOR_STORAGE_KEY, colorHex);
     } catch (e) {
@@ -577,6 +583,7 @@ export default function App() {
 
   const handleUpdateCustomHairObj = (objText: string | null) => {
     setCustomHairObj(objText);
+    setCurrentUser((prev) => (prev ? { ...prev, customHairObj: objText } : prev));
     try {
       if (objText) {
         localStorage.setItem(HAIR_OBJ_STORAGE_KEY, objText);
@@ -588,6 +595,19 @@ export default function App() {
     }
     if (currentUser?.id) {
       saveUserAvatarToFirestore(currentUser.id, { customHairObj: objText });
+    }
+  };
+
+  const handleUpdateAccessory = (accId: string) => {
+    setSelectedAccessoryId(accId);
+    setCurrentUser((prev) => (prev ? { ...prev, selectedAccessoryId: accId } : prev));
+    try {
+      localStorage.setItem(ACCESSORY_STORAGE_KEY, accId);
+    } catch (e) {
+      // ignore
+    }
+    if (currentUser?.id) {
+      saveUserAvatarToFirestore(currentUser.id, { selectedAccessoryId: accId });
     }
   };
 
@@ -888,6 +908,14 @@ export default function App() {
   };
 
   const handleLeaveBaseplate = () => {
+    if (currentUser?.id) {
+      saveUserAvatarToFirestore(currentUser.id, {
+        currentExperienceId: null,
+        currentExperienceName: null,
+        lastActive: Date.now(),
+      });
+      setCurrentUser((prev) => (prev ? { ...prev, currentExperienceId: undefined, currentExperienceName: undefined } : prev));
+    }
     if (selectedExperience) {
       setCurrentView('game');
     } else {
@@ -1651,6 +1679,8 @@ export default function App() {
                       onChangeHairColor={handleUpdateHairColor}
                       customHairObj={customHairObj}
                       onUploadCustomHairObj={handleUpdateCustomHairObj}
+                      selectedAccessoryId={selectedAccessoryId}
+                      onSelectAccessory={handleUpdateAccessory}
                     />
                   )}
 

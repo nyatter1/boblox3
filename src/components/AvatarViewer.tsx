@@ -44,6 +44,12 @@ import {
   HairColorOption
 } from '../utils/hairMesh';
 import {
+  ACCESSORY_CATALOG,
+  createAccessoryMesh,
+  attachAccessoryToHead,
+  AccessoryItem
+} from '../utils/accessoryMesh';
+import {
   COMPREHENSIVE_SKIN_TONES,
   SkinToneItem
 } from '../utils/skinTones';
@@ -54,6 +60,8 @@ import {
 import {
   getSavedShirtsInventory,
   getSavedPantsInventory,
+  saveShirtToInventory,
+  savePantsToInventory,
   CustomClothingItem
 } from '../types/avatarInventory';
 import { load3DModelFromFile } from '../utils/model3DLoader';
@@ -105,6 +113,8 @@ interface AvatarViewerProps {
   onChangeHairColor?: (color: string) => void;
   customHairObj?: string | null;
   onUploadCustomHairObj?: (objText: string | null) => void;
+  selectedAccessoryId?: string;
+  onSelectAccessory?: (accId: string) => void;
 }
 
 type MainCategory = 'Clothing' | 'Hair' | 'Body' | 'Animations';
@@ -128,6 +138,8 @@ export default function AvatarViewer({
   onChangeHairColor,
   customHairObj: externalCustomHairObj,
   onUploadCustomHairObj,
+  selectedAccessoryId: externalAccessoryId,
+  onSelectAccessory,
 }: AvatarViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const faceMeshRef = useRef<THREE.Mesh | null>(null);
@@ -357,10 +369,10 @@ export default function AvatarViewer({
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    // 2. Camera
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
-    camera.position.set(0, 0.9, 9.2);
-    camera.lookAt(0, 0.2, 0);
+    // 2. Camera (Tuned for full body R6 framing from feet pedestal to hat/hair top)
+    const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
+    camera.position.set(0, 0.85, 9.5);
+    camera.lookAt(0, 0.85, 0);
 
     // 3. WebGLRenderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -834,6 +846,22 @@ export default function AvatarViewer({
 
       if (result.dataUrl) {
         handleSelectShirtPreset('custom-upload', result.dataUrl);
+        // Permanently save to inventory so it persists across sessions
+        const cleanName = file.name.replace(/\.[^/.]+$/, '').trim() || 'My Custom Shirt';
+        generateShirt2DFrontPreview(result.dataUrl).then((prevUrl) => {
+          const item: CustomClothingItem = {
+            id: `shirt-${Date.now()}`,
+            name: cleanName,
+            type: 'shirt',
+            dataUrl: result.dataUrl!,
+            previewUrl: prevUrl,
+            createdAt: Date.now(),
+            creatorUsername: username || 'Player',
+            isCreator: true,
+          };
+          saveShirtToInventory(item);
+          reloadInventory();
+        });
       }
     } catch (err: any) {
       setShirtError(err?.message || 'Error uploading shirt template.');
@@ -860,6 +888,22 @@ export default function AvatarViewer({
 
       if (result.dataUrl) {
         handleSelectPantsPreset('custom-upload', result.dataUrl);
+        // Permanently save to inventory so it persists across sessions
+        const cleanName = file.name.replace(/\.[^/.]+$/, '').trim() || 'My Custom Pants';
+        generatePants2DFrontPreview(result.dataUrl).then((prevUrl) => {
+          const item: CustomClothingItem = {
+            id: `pants-${Date.now()}`,
+            name: cleanName,
+            type: 'pants',
+            dataUrl: result.dataUrl!,
+            previewUrl: prevUrl,
+            createdAt: Date.now(),
+            creatorUsername: username || 'Player',
+            isCreator: true,
+          };
+          savePantsToInventory(item);
+          reloadInventory();
+        });
       }
     } catch (err: any) {
       setPantsError(err?.message || 'Error uploading pants template.');

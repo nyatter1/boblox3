@@ -587,8 +587,20 @@ export default function Marketplace({
                   <div className="space-y-0.5">
                     <span className="text-[11px] text-purple-400 font-bold uppercase font-mono">Price</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-2xl font-black text-emerald-300 font-display">FREE</span>
-                      <span className="text-xs text-purple-300/60 font-mono">(0 Coins)</span>
+                      {item.price === 0 || !item.price ? (
+                        <>
+                          <span className="text-2xl font-black text-emerald-300 font-display">FREE</span>
+                          <span className="text-xs text-purple-300/60 font-mono">(0 Bobux)</span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-amber-400 font-mono">R$</span>
+                            <span className="text-2xl font-black text-amber-300 font-display">{item.price}</span>
+                          </div>
+                          <span className="text-xs text-purple-300/60 font-mono">(Bobux)</span>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -626,10 +638,14 @@ export default function Marketplace({
                   ) : (
                     <button
                       onClick={() => setPurchaseConfirmModalItem(item)}
-                      className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-display font-black text-lg tracking-wide shadow-xl shadow-emerald-950/80 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 cursor-pointer group"
+                      className={`w-full py-4 px-6 rounded-2xl text-white font-display font-black text-lg tracking-wide shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 cursor-pointer group ${
+                        item.price && item.price > 0
+                          ? 'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 shadow-amber-950/80'
+                          : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-950/80'
+                      }`}
                     >
                       <Tag className="w-5 h-5 fill-white" />
-                      <span>Get Item (Free)</span>
+                      <span>{item.price && item.price > 0 ? `Buy for R$ ${item.price}` : 'Get Item (Free)'}</span>
                     </button>
                   )}
 
@@ -727,9 +743,16 @@ export default function Marketplace({
                     ) : (
                       <Shirt className="w-10 h-10 text-purple-400" />
                     )}
-                    <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-400/40 text-emerald-300 text-[10px] font-extrabold shadow-sm">
-                      FREE
-                    </div>
+                    {rec.price && rec.price > 0 ? (
+                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-amber-950/80 border border-amber-400/40 text-amber-300 text-[10px] font-extrabold shadow-sm flex items-center gap-1">
+                        <span className="font-mono">R$</span>
+                        <span>{rec.price}</span>
+                      </div>
+                    ) : (
+                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-400/40 text-emerald-300 text-[10px] font-extrabold shadow-sm">
+                        FREE
+                      </div>
+                    )}
                   </div>
                   <div className="mt-2.5">
                     <h4 className="font-display font-bold text-white text-xs truncate group-hover:text-purple-200 transition-colors">
@@ -753,7 +776,9 @@ export default function Marketplace({
               className="w-full max-w-md bg-[#160f2e] border border-purple-500/30 rounded-3xl p-6 shadow-2xl relative text-center space-y-5 animate-scaleUp"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="font-display font-black text-xl text-white">Get Item</h3>
+              <h3 className="font-display font-black text-xl text-white">
+                {purchaseConfirmModalItem.price && purchaseConfirmModalItem.price > 0 ? 'Buy Item' : 'Get Item'}
+              </h3>
 
               {/* Item Thumbnail */}
               <div className="w-28 h-28 mx-auto rounded-2xl bg-[#0e091c] border border-purple-500/30 p-2 flex items-center justify-center shadow-inner">
@@ -771,13 +796,19 @@ export default function Marketplace({
               {/* Prompt Text */}
               <div className="space-y-1 text-sm text-purple-200">
                 <p>
-                  Would you like to get the {purchaseConfirmModalItem.type}{' '}
+                  Would you like to {purchaseConfirmModalItem.price && purchaseConfirmModalItem.price > 0 ? 'buy' : 'get'} the {purchaseConfirmModalItem.type}{' '}
                   <span className="font-bold text-white">&ldquo;{purchaseConfirmModalItem.name}&rdquo;</span> from{' '}
                   <span className="font-bold text-purple-300">{purchaseConfirmModalItem.creatorUsername}</span> for{' '}
-                  <span className="font-extrabold text-emerald-400">FREE</span>?
+                  {purchaseConfirmModalItem.price && purchaseConfirmModalItem.price > 0 ? (
+                    <span className="font-extrabold text-amber-400">R$ {purchaseConfirmModalItem.price}</span>
+                  ) : (
+                    <span className="font-extrabold text-emerald-400">FREE</span>
+                  )}?
                 </p>
                 <p className="text-xs text-purple-400/80 pt-1">
-                  Your balance after this transaction will be unchanged.
+                  {purchaseConfirmModalItem.price && purchaseConfirmModalItem.price > 0
+                    ? `This amount will be deducted from your Bobux balance.`
+                    : `Your balance after this transaction will be unchanged.`}
                 </p>
               </div>
 
@@ -792,9 +823,17 @@ export default function Marketplace({
                 <button
                   onClick={() => executePurchase(purchaseConfirmModalItem)}
                   disabled={purchasing}
-                  className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-950/50 transition-all cursor-pointer hover:scale-105"
+                  className={`py-3 px-4 rounded-xl text-white font-bold text-xs shadow-lg transition-all cursor-pointer hover:scale-105 ${
+                    purchaseConfirmModalItem.price && purchaseConfirmModalItem.price > 0
+                      ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-950/50'
+                      : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/50'
+                  }`}
                 >
-                  {purchasing ? 'Acquiring...' : 'Get Now'}
+                  {purchasing
+                    ? 'Processing...'
+                    : purchaseConfirmModalItem.price && purchaseConfirmModalItem.price > 0
+                    ? `Buy Now (R$ ${purchaseConfirmModalItem.price})`
+                    : 'Get Now (Free)'}
                 </button>
               </div>
             </div>
@@ -1023,7 +1062,7 @@ export default function Marketplace({
                       {item.type}
                     </div>
 
-                    {/* Free Price Tag & Quick Download */}
+                    {/* Price Tag & Quick Download */}
                     <div className="absolute top-2 right-2 flex items-center gap-1.5">
                       <button
                         onClick={(e) => downloadClothingTemplate(item.dataUrl, item.name, e)}
@@ -1032,9 +1071,16 @@ export default function Marketplace({
                       >
                         <Download className="w-3 h-3" />
                       </button>
-                      <div className="px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-400/40 text-emerald-300 text-[10px] font-extrabold shadow-sm">
-                        FREE
-                      </div>
+                      {item.price && item.price > 0 ? (
+                        <div className="px-2 py-0.5 rounded-md bg-amber-950/80 border border-amber-400/40 text-amber-300 text-[10px] font-extrabold shadow-sm flex items-center gap-1">
+                          <span className="font-mono">R$</span>
+                          <span>{item.price}</span>
+                        </div>
+                      ) : (
+                        <div className="px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-400/40 text-emerald-300 text-[10px] font-extrabold shadow-sm">
+                          FREE
+                        </div>
+                      )}
                     </div>
 
                     {/* Owned Indicator overlay */}

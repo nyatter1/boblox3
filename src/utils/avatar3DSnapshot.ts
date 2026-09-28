@@ -56,7 +56,7 @@ function makeCacheKey(opts: AvatarSnapshotOptions): string {
     leftLeg: DEFAULT_GREY,
     rightLeg: DEFAULT_GREY,
   };
-  return `${c.head}_${c.torso}_${c.leftArm}_${c.rightArm}_${c.leftLeg}_${c.rightLeg}|${opts.selectedFaceId || 'classic-smile'}|${opts.shirtDataUrl ? opts.shirtDataUrl.slice(-40) : 'none'}|${opts.pantsDataUrl ? opts.pantsDataUrl.slice(-40) : 'none'}|${opts.selectedHairId || 'none'}|${opts.hairColor || '#4a2e1b'}|${opts.customHairObj ? 'custom' : 'none'}|${opts.selectedAccessoryId || 'none'}|${opts.framing || 'bust'}`;
+  return `v3_${c.head}_${c.torso}_${c.leftArm}_${c.rightArm}_${c.leftLeg}_${c.rightLeg}|${opts.selectedFaceId || 'classic-smile'}|${opts.shirtDataUrl ? opts.shirtDataUrl.slice(-40) : 'none'}|${opts.pantsDataUrl ? opts.pantsDataUrl.slice(-40) : 'none'}|${opts.selectedHairId || 'none'}|${opts.hairColor || '#4a2e1b'}|${opts.customHairObj ? 'custom' : 'none'}|${opts.selectedAccessoryId || 'none'}|${opts.framing || 'bust'}`;
 }
 
 /**
@@ -83,18 +83,19 @@ export async function getAvatar3DSnapshot(opts: AvatarSnapshotOptions): Promise<
       const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 50);
 
       if (framing === 'head') {
-        camera.position.set(0, 4.75, 2.6);
-        camera.lookAt(0, 4.75, 0);
+        camera.position.set(0, 4.65, 3.2);
+        camera.lookAt(0, 4.65, 0);
       } else if (framing === 'fullBody') {
-        camera.position.set(0, 2.7, 7.8);
-        camera.lookAt(0, 2.5, 0);
+        // Fits entire R6 avatar from top of hair (y: 5.8) to bottom of feet (y: 0)
+        camera.position.set(0, 2.85, 9.8);
+        camera.lookAt(0, 2.85, 0);
       } else if (framing === 'face-and-lower-body') {
         camera.position.set(0, 3.4, 5.2);
         camera.lookAt(0, 3.2, 0);
       } else {
-        // 'bust' (Roblox avatar portrait standard)
-        camera.position.set(0, 3.85, 4.2);
-        camera.lookAt(0, 3.85, 0);
+        // 'bust' (Roblox avatar portrait standard - shifted down slightly so head/hair are nicely centered)
+        camera.position.set(0, 4.15, 4.4);
+        camera.lookAt(0, 4.15, 0);
       }
 
       // Neutral Balanced Lighting (matching Avatar Viewer exactly)

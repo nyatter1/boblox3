@@ -106,6 +106,8 @@ export default function BoBloxStudio({
   const [shirtPreviewUrl, setShirtPreviewUrl] = useState<string | null>(null);
   const [shirtError, setShirtError] = useState<string | null>(null);
   const [shirtOnSale, setShirtOnSale] = useState<boolean>(true);
+  const [shirtPriceType, setShirtPriceType] = useState<'free' | 'paid'>('free');
+  const [shirtBobuxPrice, setShirtBobuxPrice] = useState<number>(5);
 
   // Pants Creation Form State
   const [pantsName, setPantsName] = useState('');
@@ -113,6 +115,8 @@ export default function BoBloxStudio({
   const [pantsPreviewUrl, setPantsPreviewUrl] = useState<string | null>(null);
   const [pantsError, setPantsError] = useState<string | null>(null);
   const [pantsOnSale, setPantsOnSale] = useState<boolean>(true);
+  const [pantsPriceType, setPantsPriceType] = useState<'free' | 'paid'>('free');
+  const [pantsBobuxPrice, setPantsBobuxPrice] = useState<number>(5);
 
   const filteredExperiences = experiences.filter((exp) =>
     exp.name.toLowerCase().includes(filterQuery.toLowerCase()) ||
@@ -253,7 +257,7 @@ export default function BoBloxStudio({
         previewUrl: cloudPreviewUrl || undefined,
         creatorId: currentUser.id,
         creatorUsername: currentUser.username,
-        price: 0,
+        price: shirtPriceType === 'free' ? 0 : Math.max(1, shirtBobuxPrice),
         boughtCount: 0,
         onSale: true,
         createdAt: Date.now(),
@@ -341,7 +345,7 @@ export default function BoBloxStudio({
         previewUrl: cloudPreviewUrl || undefined,
         creatorId: currentUser.id,
         creatorUsername: currentUser.username,
-        price: 0,
+        price: pantsPriceType === 'free' ? 0 : Math.max(1, pantsBobuxPrice),
         boughtCount: 0,
         onSale: true,
         createdAt: Date.now(),

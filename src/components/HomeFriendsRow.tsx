@@ -48,23 +48,28 @@ export default function HomeFriendsRow({
     return () => unsub?.();
   }, [currentUser.friends]);
 
-  // Map only real live friends
+  // Map only real live friends with accurate online and in-game status
   const displayFriends: DisplayFriend[] = React.useMemo(() => {
-    return firebaseFriends.map((f) => ({
-      id: f.id,
-      username: f.username,
-      displayName: f.displayName || f.username,
-      playingGameTitle: f.currentExperienceName || (f.currentExperienceId ? 'Experience' : undefined),
-      playingExperienceId: f.currentExperienceId || undefined,
-      isOnline: Date.now() - (f.lastActive || 0) < 1000 * 60 * 10,
-      avatarColors: f.avatarColors,
-      selectedFaceId: f.selectedFaceId,
-      selectedHairId: f.selectedHairId,
-      hairColor: f.hairColor,
-      shirtDataUrl: f.shirtDataUrl,
-      pantsDataUrl: f.pantsDataUrl,
-      isVerified: isVerifiedUser(f.username),
-    }));
+    return firebaseFriends.map((f) => {
+      const isOnline = Boolean(f.lastActive && Date.now() - f.lastActive < 1000 * 120);
+      const isPlaying = isOnline && Boolean(f.currentExperienceId && f.currentExperienceId !== 'null' && f.currentExperienceId.trim() !== '');
+
+      return {
+        id: f.id,
+        username: f.username,
+        displayName: f.displayName || f.username,
+        playingGameTitle: isPlaying ? (f.currentExperienceName || 'In Game') : undefined,
+        playingExperienceId: isPlaying ? (f.currentExperienceId || undefined) : undefined,
+        isOnline,
+        avatarColors: f.avatarColors,
+        selectedFaceId: f.selectedFaceId,
+        selectedHairId: f.selectedHairId,
+        hairColor: f.hairColor,
+        shirtDataUrl: f.shirtDataUrl,
+        pantsDataUrl: f.pantsDataUrl,
+        isVerified: isVerifiedUser(f.username),
+      };
+    });
   }, [firebaseFriends]);
 
   const friendCount = displayFriends.length;

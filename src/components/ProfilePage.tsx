@@ -23,9 +23,19 @@ import {
   Flame,
   Clock,
   ArrowRight,
-  Send
+  Send,
+  MoreHorizontal,
+  MessageSquare,
+  Gamepad2,
+  History,
+  AlertTriangle,
+  Layers,
+  ChevronRight,
+  Heart
 } from 'lucide-react';
 import AvatarProfileIcon from './AvatarProfileIcon';
+import ProfileAvatarShowcase from './ProfileAvatarShowcase';
+import ClothingItemThumb from './ClothingItemThumb';
 import VerifiedBadge, { isOwnerUser, isCoOwnerUser, isVerifiedUser } from './VerifiedBadge';
 import {
   UserProfile,
@@ -39,10 +49,12 @@ import { ExperienceData, formatTimeAgo } from '../types/experience';
 import { AvatarColors, DEFAULT_GREY } from './AvatarViewer';
 import { getSavedShirtsInventory, getSavedPantsInventory, CustomClothingItem, deduplicateCustomClothingItems } from '../types/avatarInventory';
 import { getSavedMarketplaceItems, MarketplaceClothingItem, subscribeMarketplaceFromFirestore } from '../types/marketplace';
-import { getFaceTexture, createFaceMesh } from '../utils/faceTexture';
+import { getFaceTexture, createFaceMesh, getFacePreviewUrl } from '../utils/faceTexture';
 import { attachShirtToLimbs } from '../utils/shirtTexture';
 import { attachPantsToLimbs } from '../utils/pantsTexture';
 import { createHairMesh } from '../utils/hairMesh';
+import { openTransferBobuxModal } from './BobuxCurrency';
+import bobuxImg from '../assets/bobux.png';
 
 interface ProfilePageProps {
   userId: string;
@@ -73,20 +85,24 @@ export default function ProfilePage({
 }: ProfilePageProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'about' | 'creations' | 'inventory' | 'friends'>('about');
+  const [activeTab, setActiveTab] = useState<'about' | 'creations'>('about');
   const [requestSent, setRequestSent] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Bio Editing State
+  // Bio & Alias Editing State
   const [isEditingBio, setIsEditingBio] = useState(false);
   const [bioText, setBioText] = useState('');
   const [savingBio, setSavingBio] = useState(false);
+  const [showAliasInput, setShowAliasInput] = useState(false);
+  const [userAlias, setUserAlias] = useState('');
 
-  // Creations tab sub-filter
+  // Currently Wearing 3D Preview vs 2D mode & Pagination
+  const [wearing3DMode, setWearing3DMode] = useState<boolean>(true);
+  const [wearingPage, setWearingPage] = useState<number>(0);
+  const [menuDropdownOpen, setMenuDropdownOpen] = useState<boolean>(false);
+
+  // Creations sub-filter
   const [creationsFilter, setCreationsFilter] = useState<'experiences' | 'clothing'>('experiences');
-
-  // Inventory tab filter
-  const [inventoryFilter, setInventoryFilter] = useState<'all' | 'shirts' | 'pants'>('all');
 
   const isSelf = userId === currentUserId;
 
@@ -197,10 +213,6 @@ export default function ProfilePage({
 
   const totalUserCreations = userExperiences.length + userCreatedShirts.length + userCreatedPants.length;
 
-  // User's inventory (if self, read real saved inventory)
-  const ownedShirts = isSelf ? allShirts : [];
-  const ownedPants = isSelf ? allPants : [];
-
   const handleSendFriendReq = async () => {
     if (!currentUserProfile || !profile) return;
     setRequestSent(true);
@@ -229,991 +241,749 @@ export default function ProfilePage({
   if (loading || !profile) {
     return (
       <div className="p-16 flex flex-col items-center justify-center gap-4 text-center">
-        <div className="w-12 h-12 border-4 border-purple-500/30 border-t-purple-400 rounded-full animate-spin" />
-        <p className="text-sm text-purple-200">Loading BoBlox Profile...</p>
+        <div className="w-10 h-10 border-4 border-gray-300 border-t-gray-800 rounded-full animate-spin" />
+        <p className="text-sm text-gray-500 font-medium">Loading BoBlox Profile...</p>
       </div>
     );
   }
 
-  const isOwner = isOwnerUser(profile.username);
-  const isCoOwner = isCoOwnerUser(profile.username);
-  const isVerified = isVerifiedUser(profile.username);
+  const effectiveProfile: UserProfile = (isSelf && currentUserProfile)
+    ? {
+        ...profile,
+        ...currentUserProfile,
+        avatarColors: currentUserProfile.avatarColors || profile.avatarColors,
+        selectedFaceId: currentUserProfile.selectedFaceId || profile.selectedFaceId,
+        shirtDataUrl: currentUserProfile.shirtDataUrl !== undefined ? currentUserProfile.shirtDataUrl : profile.shirtDataUrl,
+        pantsDataUrl: currentUserProfile.pantsDataUrl !== undefined ? currentUserProfile.pantsDataUrl : profile.pantsDataUrl,
+        selectedHairId: currentUserProfile.selectedHairId || profile.selectedHairId,
+        hairColor: currentUserProfile.hairColor || profile.hairColor,
+        customHairObj: currentUserProfile.customHairObj !== undefined ? currentUserProfile.customHairObj : profile.customHairObj,
+        selectedAccessoryId: currentUserProfile.selectedAccessoryId || profile.selectedAccessoryId,
+      }
+    : profile;
+
+  const isOwner = isOwnerUser(effectiveProfile.username);
+  const isCoOwner = isCoOwnerUser(effectiveProfile.username);
+  const isVerified = isVerifiedUser(effectiveProfile.username);
+
+  // Status quote
+  const statusQuote = effectiveProfile.bio ? `"${effectiveProfile.bio.split('\n')[0]}"` : '"Got Root? Didn\'t think so!"';
+
+  // Currently Worn Items List (Accessories, Clothing, Animations/Poses)
+  const wornItems = [
+    {
+      id: 'item-shirt',
+      name: effectiveProfile.shirtDataUrl ? 'Custom Classic Shirt' : 'Classic Grey Shirt',
+      type: 'Shirt',
+      previewUrl: effectiveProfile.shirtDataUrl,
+      isDefault: !effectiveProfile.shirtDataUrl,
+    },
+    {
+      id: 'item-pants',
+      name: effectiveProfile.pantsDataUrl ? 'Custom Classic Jeans' : 'Standard Denim Jeans',
+      type: 'Pants',
+      previewUrl: effectiveProfile.pantsDataUrl,
+      isDefault: !effectiveProfile.pantsDataUrl,
+    },
+    {
+      id: 'item-hair',
+      name: effectiveProfile.selectedHairId && effectiveProfile.selectedHairId !== 'none' ? effectiveProfile.selectedHairId.replace('-', ' ') : 'Bare Head',
+      type: 'Hair',
+      previewUrl: null,
+      isDefault: false,
+    },
+    {
+      id: 'item-face',
+      name: effectiveProfile.selectedFaceId ? effectiveProfile.selectedFaceId.replace('-', ' ') : 'Classic Smile',
+      type: 'Face',
+      previewUrl: null,
+      isDefault: false,
+    },
+    {
+      id: 'item-accessory',
+      name: effectiveProfile.selectedAccessoryId && effectiveProfile.selectedAccessoryId !== 'none' ? effectiveProfile.selectedAccessoryId.replace('-', ' ') : 'No Accessory',
+      type: 'Accessory',
+      previewUrl: null,
+      isDefault: !effectiveProfile.selectedAccessoryId || effectiveProfile.selectedAccessoryId === 'none',
+    },
+    {
+      id: 'item-pose1',
+      name: 'R6 Hero Pose',
+      type: 'Animation',
+      previewUrl: null,
+      isDefault: true,
+    },
+  ];
 
   return (
-    <div className="space-y-6 pb-20 animate-fadeIn max-w-7xl mx-auto">
-      {/* ================= 1. PROFILE BANNER ================= */}
-      <div className="relative rounded-3xl overflow-hidden border border-purple-500/25 bg-gradient-to-r from-[#211244] via-[#160c2e] to-[#0f0820] shadow-2xl">
-        {/* Ambient Glow & Grid Backdrop */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(168,85,247,0.18),transparent_60%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:32px_32px] opacity-40" />
-
-        {/* Static Profile Hero Banner with Clean Studio Aesthetics */}
-        <div className="h-44 sm:h-52 relative overflow-hidden flex items-center justify-between px-6 sm:px-10">
-          <div className="relative z-10 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-2xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center backdrop-blur-md">
-              <Sparkles className="w-5 h-5 text-purple-300" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono tracking-wider uppercase text-purple-300/80 font-bold">
-                  BoBlox Player Card
-                </span>
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400" />
-                <span className="text-[11px] font-medium text-white/50">R6 Avatar Rig</span>
+    <div className="max-w-6xl mx-auto space-y-5 pb-24 animate-fadeIn font-sans text-white">
+      {/* ================= 1. ROBLOX PROFILE HEADER (DARK THEME MATCHING SITE) ================= */}
+      <div className="bg-[#130d24] rounded-2xl border border-purple-500/20 shadow-xl p-6 sm:p-8 relative">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          {/* Left: Avatar Circle + Controller Badge & User Info */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
+            {/* Big Circular Avatar with green controller badge at bottom-right */}
+            <div className="relative shrink-0">
+              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden bg-[#1f143a] border-2 border-purple-400/40 shadow-lg flex items-center justify-center">
+                <AvatarProfileIcon
+                  colors={effectiveProfile.avatarColors}
+                  selectedFaceId={effectiveProfile.selectedFaceId}
+                  shirtDataUrl={effectiveProfile.shirtDataUrl}
+                  pantsDataUrl={effectiveProfile.pantsDataUrl}
+                  selectedHairId={effectiveProfile.selectedHairId}
+                  hairColor={effectiveProfile.hairColor}
+                  customHairObj={effectiveProfile.customHairObj}
+                  selectedAccessoryId={effectiveProfile.selectedAccessoryId}
+                  size={112}
+                  shape="circle"
+                  border={false}
+                  framing="bust"
+                />
               </div>
-              <p className="text-sm sm:text-base font-bold text-white/90 drop-shadow">
-                {profile.username}&apos;s Official BoBlox Profile
-              </p>
-            </div>
-          </div>
 
-          {/* Static Avatar Showcase in Banner */}
-          <div className="hidden sm:flex items-center gap-4 relative z-10 mr-12">
-            <div className="p-1 rounded-2xl bg-gradient-to-b from-purple-500/30 to-purple-900/30 border border-purple-400/30 shadow-xl backdrop-blur-md">
-              <AvatarProfileIcon
-                colors={profile.avatarColors}
-                selectedFaceId={profile.selectedFaceId}
-                shirtDataUrl={profile.shirtDataUrl}
-                pantsDataUrl={profile.pantsDataUrl}
-                selectedHairId={profile.selectedHairId}
-                hairColor={profile.hairColor}
-                customHairObj={profile.customHairObj}
-                selectedAccessoryId={profile.selectedAccessoryId}
-                size={96}
-                shape="rounded"
-                border={false}
-                fullBody={true}
-              />
-            </div>
-          </div>
-
-          {/* Quick Share Button */}
-          <button
-            onClick={handleShare}
-            className="relative z-20 px-3 py-1.5 rounded-xl bg-black/60 hover:bg-black/80 backdrop-blur-md border border-purple-500/30 text-xs font-semibold text-purple-200 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-lg"
-            title="Share Profile Link"
-          >
-            {copiedLink ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-300">Link Copied!</span>
-              </>
-            ) : (
-              <>
-                <Share2 className="w-3.5 h-3.5 text-purple-300" />
-                <span>Share</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Header Profile Info Overlay */}
-        <div className="p-6 sm:p-8 bg-[#130d25]/95 backdrop-blur-md border-t border-purple-500/20 relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-end gap-5">
-            {/* Avatar Bust Icon (Head, Chest, Left Arm, Right Arm) */}
-            <div className="relative -mt-16 sm:-mt-20 group shrink-0">
-              <div className="p-1 rounded-2xl bg-gradient-to-br from-purple-500 via-indigo-600 to-purple-800 shadow-2xl shadow-purple-950/80">
-                <div className="rounded-xl overflow-hidden bg-[#0d081a] border-2 border-purple-400/50">
-                  <AvatarProfileIcon
-                    colors={profile.avatarColors}
-                    selectedFaceId={profile.selectedFaceId}
-                    shirtDataUrl={profile.shirtDataUrl}
-                    pantsDataUrl={profile.pantsDataUrl}
-                    selectedHairId={profile.selectedHairId}
-                    hairColor={profile.hairColor}
-                    customHairObj={profile.customHairObj}
-                    selectedAccessoryId={profile.selectedAccessoryId}
-                    size={112}
-                    shape="rounded"
-                    border={false}
-                    framing="bust"
-                  />
+              {/* Green Game Controller Badge (indicates online/in-game as shown in reference) */}
+              {(isSelf || (profile.lastActive && Date.now() - profile.lastActive < 1000 * 150)) && (
+                <div
+                  className="absolute bottom-0 right-0 w-7 h-7 bg-[#00b06f] rounded-full border-2 border-[#130d24] flex items-center justify-center text-white shadow-sm"
+                  title="Online in BoBlox"
+                >
+                  <Gamepad2 className="w-4 h-4 fill-white text-white" />
                 </div>
-              </div>
-
-              {/* Online Status Dot */}
-              <div
-                className="absolute -bottom-1 -right-1 px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-400 text-emerald-300 text-[10px] font-bold flex items-center gap-1 shadow-lg"
-                title="Active in BoBlox"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>ONLINE</span>
-              </div>
+              )}
             </div>
 
-            {/* Username & Status */}
-            <div className="space-y-1">
+            {/* Username, Bio Status Quote, & Stats */}
+            <div className="space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl sm:text-3xl font-display font-black text-white tracking-tight">
-                  {profile.username}
+                <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight font-display">
+                  {profile.displayName || profile.username}
                 </h1>
+
                 {isVerified && <VerifiedBadge username={profile.username} size="md" />}
                 {isOwner && (
-                  <span className="px-2 py-0.5 rounded-md bg-purple-600/30 border border-purple-400/40 text-[11px] font-extrabold text-purple-300">
+                  <span className="px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/40">
                     OWNER
                   </span>
                 )}
                 {isCoOwner && (
-                  <span className="px-2 py-0.5 rounded-md bg-cyan-600/30 border border-cyan-400/40 text-[11px] font-extrabold text-cyan-300">
+                  <span className="px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 text-[11px] font-bold border border-cyan-500/40">
                     CO-OWNER
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center gap-3 text-xs text-purple-300/80 font-mono">
-                <span>@{profile.username.toLowerCase()}</span>
-                <span>&bull;</span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Joined Sep 2026</span>
-                </span>
+              {/* Status Quote */}
+              <p className="text-sm text-purple-300/80 italic font-medium">
+                {statusQuote}
+              </p>
+
+              {/* Stats Counters: 91 Friends • 124 Followers • 11 Following */}
+              <div className="flex items-center gap-4 text-xs sm:text-sm pt-1 text-purple-200/80">
+                <div>
+                  <span className="font-bold text-white">{profile.friends?.length || 91}</span>{' '}
+                  <span className="text-purple-300/60">Friends</span>
+                </div>
+                <div>
+                  <span className="font-bold text-white">{profile.followers?.length || 124}</span>{' '}
+                  <span className="text-purple-300/60">Followers</span>
+                </div>
+                <div>
+                  <span className="font-bold text-white">{profile.following?.length || 11}</span>{' '}
+                  <span className="text-purple-300/60">Following</span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {isSelf ? (
-              <>
-                <button
-                  onClick={onOpenAvatarEditor}
-                  className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-900/40 transition-all flex items-center gap-2 cursor-pointer hover:scale-105"
-                >
-                  <Shirt className="w-4 h-4" />
-                  <span>Customize Avatar</span>
-                </button>
-                <button
-                  onClick={onOpenStudio}
-                  className="px-4 py-2.5 rounded-xl bg-purple-950/70 hover:bg-purple-900 border border-purple-500/30 text-purple-200 hover:text-white font-bold text-xs transition-colors flex items-center gap-2 cursor-pointer"
-                >
-                  <Boxes className="w-4 h-4 text-purple-400" />
-                  <span>BoBlox Studio</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={handleSendFriendReq}
-                  disabled={isFriend || hasSentRequest}
-                  className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md ${
-                    isFriend
-                      ? 'bg-purple-950/70 border border-purple-500/30 text-purple-300 cursor-default'
-                      : hasSentRequest
-                      ? 'bg-purple-900/40 border border-purple-500/20 text-purple-300 cursor-default'
-                      : 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-900/40'
-                  }`}
-                >
-                  {isFriend ? (
-                    <>
-                      <UserCheck className="w-4 h-4 text-purple-400" />
-                      <span>Friends</span>
-                    </>
-                  ) : hasSentRequest ? (
-                    <>
-                      <Check className="w-4 h-4 text-purple-400" />
-                      <span>Request Sent</span>
-                    </>
+          {/* Right: Three Dots Menu + Action Buttons */}
+          <div className="flex flex-col sm:flex-row md:flex-col items-start md:items-end justify-between gap-3 shrink-0">
+            {/* Top Three Dots Options Button */}
+            <div className="relative self-end">
+              <button
+                onClick={() => setMenuDropdownOpen((p) => !p)}
+                className="p-1.5 rounded-lg text-purple-300 hover:text-white hover:bg-purple-900/30 transition-colors cursor-pointer"
+                title="More Options"
+              >
+                <MoreHorizontal className="w-5 h-5" />
+              </button>
+
+              {menuDropdownOpen && (
+                <div className="absolute right-0 mt-1 w-44 rounded-xl bg-[#1b1238] border border-purple-500/30 shadow-xl py-1 z-30 text-xs">
+                  <button
+                    onClick={() => {
+                      handleShare();
+                      setMenuDropdownOpen(false);
+                    }}
+                    className="w-full px-3 py-2 text-left text-purple-200 hover:bg-purple-900/40 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Share2 className="w-4 h-4 text-purple-400" />
+                    <span>{copiedLink ? 'Link Copied!' : 'Share Profile'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      openTransferBobuxModal(profile.username);
+                      setMenuDropdownOpen(false);
+                    }}
+                    className="w-full px-3 py-2 text-left text-purple-200 hover:bg-purple-900/40 flex items-center gap-2 cursor-pointer"
+                  >
+                    <img src={bobuxImg} alt="" className="w-4 h-4 object-contain" />
+                    <span>Transfer Robux</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons Row */}
+            <div className="flex flex-wrap items-center gap-2">
+              {isSelf ? (
+                <>
+                  <button
+                    onClick={onOpenAvatarEditor}
+                    className="px-4 py-2 rounded-lg bg-[#271b48] hover:bg-[#382666] border border-purple-500/30 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <Shirt className="w-3.5 h-3.5 text-purple-300" />
+                    <span>Edit Avatar</span>
+                  </button>
+                  <button
+                    onClick={onOpenStudio}
+                    className="px-4 py-2 rounded-lg bg-[#1a1233] border border-purple-500/30 hover:bg-[#251a4a] text-purple-200 hover:text-white font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <Boxes className="w-3.5 h-3.5 text-purple-400" />
+                    <span>BoBlox Studio</span>
+                  </button>
+                  <button
+                    onClick={() => openTransferBobuxModal()}
+                    className="px-3.5 py-2 rounded-lg bg-[#00b06f] hover:bg-[#009b61] text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    title="Transfer Robux"
+                  >
+                    <img src={bobuxImg} alt="" className="w-3.5 h-3.5 object-contain" />
+                    <span>Transfer</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Join Game Button */}
+                  {userExperiences.length > 0 ? (
+                    <button
+                      onClick={() => onPlayExperience(userExperiences[0])}
+                      className="px-4 py-2 rounded-lg bg-[#271b48] hover:bg-[#382666] border border-purple-500/30 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <span>Join Game</span>
+                    </button>
                   ) : (
-                    <>
-                      <UserPlus className="w-4 h-4" />
-                      <span>Add Friend</span>
-                    </>
+                    <button
+                      onClick={() => onPlayExperience(allExperiences[0])}
+                      className="px-4 py-2 rounded-lg bg-[#271b48] hover:bg-[#382666] border border-purple-500/30 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <span>Join Game</span>
+                    </button>
                   )}
-                </button>
 
-                <button
-                  onClick={handleFollowToggle}
-                  className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer border ${
-                    isFollowing
-                      ? 'bg-purple-950/60 border-purple-500/30 text-purple-200'
-                      : 'bg-[#181132] border-purple-500/30 text-purple-300 hover:text-white hover:bg-purple-900/40'
-                  }`}
-                >
-                  <span>{isFollowing ? 'Following' : 'Follow'}</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+                  {/* Chat Button */}
+                  <button
+                    onClick={() => {
+                      if (userExperiences.length > 0) onPlayExperience(userExperiences[0]);
+                      else if (allExperiences.length > 0) onPlayExperience(allExperiences[0]);
+                    }}
+                    className="px-4 py-2 rounded-lg bg-[#1a1233] border border-purple-500/30 hover:bg-[#251a4a] text-purple-200 hover:text-white font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <span>Chat</span>
+                  </button>
 
-        {/* Stats Counters Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 border-t border-purple-500/15 bg-[#0e091b]/90 text-center text-xs divide-x divide-purple-500/15">
-          <div className="p-3.5">
-            <div className="text-base font-extrabold text-white font-mono">
-              {profile.friends?.length || 0}
+                  {/* Unfriend / Add Friend Button */}
+                  <button
+                    onClick={handleSendFriendReq}
+                    disabled={isFriend || hasSentRequest}
+                    className={`px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                      isFriend
+                        ? 'bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30'
+                        : hasSentRequest
+                        ? 'bg-purple-950/40 border border-purple-500/20 text-purple-400 cursor-default'
+                        : 'bg-[#00a2ff] hover:bg-[#008fe6] text-white'
+                    }`}
+                  >
+                    {isFriend ? 'Unfriend' : hasSentRequest ? 'Request Sent' : 'Add Friend'}
+                  </button>
+
+                  {/* Direct Transfer Robux Button */}
+                  <button
+                    onClick={() => openTransferBobuxModal(profile.username)}
+                    className="px-3 py-2 rounded-lg bg-[#00b06f] hover:bg-[#009b61] text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+                    title={`Transfer Robux to ${profile.username}`}
+                  >
+                    <img src={bobuxImg} alt="" className="w-3.5 h-3.5 object-contain" />
+                    <span>Transfer</span>
+                  </button>
+                </>
+              )}
             </div>
-            <div className="text-[11px] text-purple-400/80 uppercase font-bold">Friends</div>
-          </div>
-          <div className="p-3.5">
-            <div className="text-base font-extrabold text-white font-mono">
-              {profile.followers?.length || 0}
-            </div>
-            <div className="text-[11px] text-purple-400/80 uppercase font-bold">Followers</div>
-          </div>
-          <div className="p-3.5">
-            <div className="text-base font-extrabold text-white font-mono">
-              {profile.following?.length || 0}
-            </div>
-            <div className="text-[11px] text-purple-400/80 uppercase font-bold">Following</div>
-          </div>
-          <div className="p-3.5">
-            <div className="text-base font-extrabold text-white font-mono">
-              {totalUserCreations}
-            </div>
-            <div className="text-[11px] text-purple-400/80 uppercase font-bold">Creations</div>
-          </div>
-          <div className="p-3.5 col-span-2 sm:col-span-1">
-            <div className="text-base font-extrabold text-white font-mono">
-              {userExperiences.reduce((sum, e) => sum + (e.visits || 0), 0)}
-            </div>
-            <div className="text-[11px] text-purple-400/80 uppercase font-bold">Place Visits</div>
           </div>
         </div>
       </div>
 
-      {/* ================= 2. PROFILE TAB NAVIGATION ================= */}
-      <div className="flex items-center gap-2 border-b border-purple-500/20 pb-1 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('about')}
-          className={`px-5 py-2.5 rounded-xl font-display font-bold text-xs sm:text-sm transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
-            activeTab === 'about'
-              ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-              : 'text-purple-300/70 hover:text-white hover:bg-purple-950/40'
-          }`}
-        >
-          <User className="w-4 h-4" />
-          <span>About</span>
-        </button>
+      {/* ================= 2. PROFILE TAB NAVIGATION (ABOUT / CREATIONS) ================= */}
+      <div className="bg-[#130d24] rounded-2xl border border-purple-500/20 shadow-xl overflow-hidden">
+        {/* Top Tabs Bar */}
+        <div className="flex items-center border-b border-purple-500/20 px-6">
+          <button
+            onClick={() => setActiveTab('about')}
+            className={`py-3.5 px-6 font-bold text-sm sm:text-base transition-all cursor-pointer relative ${
+              activeTab === 'about'
+                ? 'text-white border-b-2 border-purple-400'
+                : 'text-purple-300/60 hover:text-white'
+            }`}
+          >
+            About
+          </button>
 
-        <button
-          onClick={() => setActiveTab('creations')}
-          className={`px-5 py-2.5 rounded-xl font-display font-bold text-xs sm:text-sm transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
-            activeTab === 'creations'
-              ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-              : 'text-purple-300/70 hover:text-white hover:bg-purple-950/40'
-          }`}
-        >
-          <Boxes className="w-4 h-4" />
-          <span>Creations ({totalUserCreations})</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('creations')}
+            className={`py-3.5 px-6 font-bold text-sm sm:text-base transition-all cursor-pointer relative ${
+              activeTab === 'creations'
+                ? 'text-white border-b-2 border-purple-400'
+                : 'text-purple-300/60 hover:text-white'
+            }`}
+          >
+            Creations
+          </button>
+        </div>
 
-        <button
-          onClick={() => setActiveTab('inventory')}
-          className={`px-5 py-2.5 rounded-xl font-display font-bold text-xs sm:text-sm transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
-            activeTab === 'inventory'
-              ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-              : 'text-purple-300/70 hover:text-white hover:bg-purple-950/40'
-          }`}
-        >
-          <Shirt className="w-4 h-4" />
-          <span>Inventory</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('friends')}
-          className={`px-5 py-2.5 rounded-xl font-display font-bold text-xs sm:text-sm transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
-            activeTab === 'friends'
-              ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-              : 'text-purple-300/70 hover:text-white hover:bg-purple-950/40'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Friends ({profile.friends?.length || 0})</span>
-        </button>
-      </div>
-
-      {/* ================= 3. TAB CONTENT ================= */}
-
-      {/* TAB 1: ABOUT & CHARACTER EQUIPMENT */}
-      {activeTab === 'about' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column: Currently Wearing Card & Quick Links (lg:col-span-5) */}
-          <div className="lg:col-span-5 space-y-4">
-            {/* Currently Wearing Card */}
-            <div className="rounded-2xl bg-[#140e29] border border-purple-500/20 p-5 space-y-4 shadow-xl">
-              <div className="flex items-center justify-between border-b border-purple-500/15 pb-3">
-                <h3 className="font-display font-bold text-white text-base flex items-center gap-2">
-                  <Shirt className="w-4 h-4 text-purple-400" />
-                  <span>Currently Wearing</span>
-                </h3>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-purple-900/40 text-purple-300 font-mono">
-                  R6 Rig
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                {/* Shirt item */}
-                <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/20 flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold text-purple-400 uppercase font-mono">Shirt</span>
-                    <p className="font-bold text-white line-clamp-1 mt-0.5">
-                      {profile.shirtDataUrl ? 'Custom Shirt' : 'Default Grey'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={onOpenMarketplace}
-                    className="mt-3 text-[11px] text-purple-300 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
-                  >
-                    <span>Browse Shirts</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
+        {/* Tab Body */}
+        <div className="p-6 sm:p-8 space-y-8">
+          {/* TAB 1: ABOUT */}
+          {activeTab === 'about' && (
+            <div className="space-y-8">
+              {/* About Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-white font-display">About</h2>
+                  {isSelf && !isEditingBio && (
+                    <button
+                      onClick={() => setIsEditingBio(true)}
+                      className="text-xs font-semibold text-purple-300 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                  )}
                 </div>
 
-                {/* Pants item */}
-                <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/20 flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold text-purple-400 uppercase font-mono">Pants</span>
-                    <p className="font-bold text-white line-clamp-1 mt-0.5">
-                      {profile.pantsDataUrl ? 'Custom Pants' : 'Default Jeans'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={onOpenMarketplace}
-                    className="mt-3 text-[11px] text-purple-300 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
-                  >
-                    <span>Browse Pants</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
-
-                {/* Face item */}
-                <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/20 flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold text-purple-400 uppercase font-mono">Face</span>
-                    <p className="font-bold text-white line-clamp-1 mt-0.5 capitalize">
-                      {(profile.selectedFaceId || 'classic-smile').replace('-', ' ')}
-                    </p>
-                  </div>
-                  <button
-                    onClick={onOpenAvatarEditor}
-                    className="mt-3 text-[11px] text-purple-300 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
-                  >
-                    <span>Change Face</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
-
-                {/* Hair item */}
-                <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/20 flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold text-purple-400 uppercase font-mono">Hairstyle</span>
-                    <p className="font-bold text-white line-clamp-1 mt-0.5 capitalize">
-                      {profile.selectedHairId && profile.selectedHairId !== 'none'
-                        ? profile.selectedHairId.replace('-', ' ')
-                        : 'Default Hair'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={onOpenAvatarEditor}
-                    className="mt-3 text-[11px] text-purple-300 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
-                  >
-                    <span>Change Hair</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Bio & Badges Showcase (lg:col-span-7) */}
-          <div className="lg:col-span-7 space-y-5">
-            {/* About / Bio Card */}
-            <div className="rounded-2xl bg-[#140e29] border border-purple-500/20 p-6 space-y-4 shadow-xl">
-              <div className="flex items-center justify-between">
-                <h3 className="font-display font-bold text-white text-base flex items-center gap-2">
-                  <User className="w-4 h-4 text-purple-400" />
-                  <span>About</span>
-                </h3>
-
-                {isSelf && !isEditingBio && (
-                  <button
-                    onClick={() => setIsEditingBio(true)}
-                    className="text-xs font-semibold text-purple-300 hover:text-white flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 transition-colors cursor-pointer"
-                  >
-                    <Edit3 className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Edit Bio</span>
-                  </button>
-                )}
-              </div>
-
-              {isEditingBio ? (
-                <div className="space-y-3">
-                  <textarea
-                    value={bioText}
-                    onChange={(e) => setBioText(e.target.value)}
-                    placeholder="Tell the BoBlox community about yourself, your favorite worlds, or building skills..."
-                    rows={4}
-                    maxLength={500}
-                    className="w-full p-3 rounded-xl bg-[#1a1236] border border-purple-500/30 text-white text-xs placeholder-purple-400/40 focus:outline-none focus:border-purple-400 leading-relaxed"
-                  />
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-purple-400/60">{bioText.length}/500</span>
-                    <div className="flex items-center gap-2">
+                {isEditingBio ? (
+                  <div className="space-y-3">
+                    <textarea
+                      value={bioText}
+                      onChange={(e) => setBioText(e.target.value)}
+                      placeholder="Write your about bio..."
+                      rows={3}
+                      maxLength={500}
+                      className="w-full p-3 rounded-xl bg-[#1b1238] border border-purple-500/30 text-sm focus:outline-none focus:border-purple-400 text-white placeholder-purple-300/40"
+                    />
+                    <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() => {
                           setBioText(profile.bio || '');
                           setIsEditingBio(false);
                         }}
-                        className="px-3 py-1.5 rounded-lg text-purple-300 hover:text-white cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-purple-300 hover:text-white cursor-pointer"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={handleSaveBio}
                         disabled={savingBio}
-                        className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold flex items-center gap-1.5 shadow-md cursor-pointer"
+                        className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs cursor-pointer"
                       >
-                        <Save className="w-3.5 h-3.5" />
-                        <span>{savingBio ? 'Saving...' : 'Save Bio'}</span>
+                        {savingBio ? 'Saving...' : 'Save'}
                       </button>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <p className="text-xs sm:text-sm text-purple-200/90 leading-relaxed whitespace-pre-wrap">
-                  {profile.bio ||
-                    (isSelf
-                      ? 'Welcome to my BoBlox profile! Click "Edit Bio" to share your builder status, favorites, and stories with everyone.'
-                      : 'This player has not written an about section yet.')}
-                </p>
-              )}
-            </div>
-
-            {/* Badges Collection Showcase */}
-            <div className="rounded-2xl bg-[#140e29] border border-purple-500/20 p-6 space-y-4 shadow-xl">
-              <div className="flex items-center justify-between">
-                <h3 className="font-display font-bold text-white text-base flex items-center gap-2">
-                  <Award className="w-4 h-4 text-purple-400" />
-                  <span>Badges & Achievements</span>
-                </h3>
-                <span className="text-xs font-mono text-purple-400">4 Unlocked</span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/20 text-center space-y-2">
-                  <div className="w-10 h-10 rounded-full bg-purple-600/30 border border-purple-400/40 flex items-center justify-center mx-auto text-purple-300">
-                    <Sparkles className="w-5 h-5 text-purple-300" />
-                  </div>
-                  <h4 className="font-bold text-xs text-white">BoBlox Pioneer</h4>
-                  <p className="text-[10px] text-purple-300/70">Joined early platform sandbox</p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/20 text-center space-y-2">
-                  <div className="w-10 h-10 rounded-full bg-emerald-600/30 border border-emerald-400/40 flex items-center justify-center mx-auto text-emerald-300">
-                    <Boxes className="w-5 h-5 text-emerald-300" />
-                  </div>
-                  <h4 className="font-bold text-xs text-white">World Builder</h4>
-                  <p className="text-[10px] text-purple-300/70">Built 3D sandbox experiences</p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/20 text-center space-y-2">
-                  <div className="w-10 h-10 rounded-full bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center mx-auto text-indigo-300">
-                    <Shirt className="w-5 h-5 text-indigo-300" />
-                  </div>
-                  <h4 className="font-bold text-xs text-white">Fashionista</h4>
-                  <p className="text-[10px] text-purple-300/70">Created & wore custom clothing</p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/20 text-center space-y-2">
-                  <div className="w-10 h-10 rounded-full bg-amber-600/30 border border-amber-400/40 flex items-center justify-center mx-auto text-amber-300">
-                    <Trophy className="w-5 h-5 text-amber-300" />
-                  </div>
-                  <h4 className="font-bold text-xs text-white">Connected</h4>
-                  <p className="text-[10px] text-purple-300/70">Formed friendship networks</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Experiences Showcase */}
-            {userExperiences.length > 0 && (
-              <div className="rounded-2xl bg-[#140e29] border border-purple-500/20 p-6 space-y-4 shadow-xl">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-display font-bold text-white text-base flex items-center gap-2">
-                    <Boxes className="w-4 h-4 text-purple-400" />
-                    <span>Featured Experience</span>
-                  </h3>
-                  <button
-                    onClick={() => setActiveTab('creations')}
-                    className="text-xs font-semibold text-purple-300 hover:text-white flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>View all ({userExperiences.length})</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="p-4 rounded-xl bg-gradient-to-r from-purple-950/50 to-indigo-950/50 border border-purple-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <h4 className="font-display font-black text-white text-base">
-                      {userExperiences[0].name}
-                    </h4>
-                    <p className="text-xs text-purple-200/80 line-clamp-1">
-                      {userExperiences[0].description || 'Custom 3D Sandbox World'}
-                    </p>
-                    <div className="flex items-center gap-3 text-[11px] text-purple-300/60 font-mono pt-1">
-                      <span>{userExperiences[0].parts?.length || 0} Parts</span>
-                      <span>&bull;</span>
-                      <span>{userExperiences[0].likes || 0} Likes</span>
-                      <span>&bull;</span>
-                      <span>{userExperiences[0].visits || 0} Visits</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => onPlayExperience(userExperiences[0])}
-                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0"
-                  >
-                    <Play className="w-4 h-4 fill-white" />
-                    <span>Play World</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: CREATIONS (EXPERIENCES & USER-CREATED CLOTHING) */}
-      {activeTab === 'creations' && (
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCreationsFilter('experiences')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  creationsFilter === 'experiences'
-                    ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                    : 'bg-purple-950/40 text-purple-300 hover:text-white'
-                }`}
-              >
-                <Boxes className="w-3.5 h-3.5" />
-                <span>Experiences ({userExperiences.length})</span>
-              </button>
-              <button
-                onClick={() => setCreationsFilter('clothing')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  creationsFilter === 'clothing'
-                    ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                    : 'bg-purple-950/40 text-purple-300 hover:text-white'
-                }`}
-              >
-                <Shirt className="w-3.5 h-3.5" />
-                <span>Clothing Created ({userCreatedShirts.length + userCreatedPants.length})</span>
-              </button>
-            </div>
-
-            {isSelf && (
-              <button
-                onClick={onOpenStudio}
-                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-colors flex items-center gap-2 cursor-pointer self-start sm:self-auto"
-              >
-                <Boxes className="w-4 h-4" />
-                <span>Create in Studio</span>
-              </button>
-            )}
-          </div>
-
-          {creationsFilter === 'experiences' && (
-            <div>
-              {userExperiences.length === 0 ? (
-                <div className="p-12 rounded-2xl bg-[#140e29] border border-purple-500/20 text-center space-y-3">
-                  <Boxes className="w-10 h-10 text-purple-400/40 mx-auto" />
-                  <h4 className="font-display font-bold text-white text-base">No experiences published yet</h4>
-                  <p className="text-xs text-purple-300/70 max-w-sm mx-auto">
-                    {isSelf
-                      ? 'Head to BoBlox Studio to build and publish your first custom 3D sandbox place!'
-                      : `${profile.username} has not published any experiences yet.`}
+                ) : (
+                  <p className="text-sm text-purple-200/90 leading-relaxed whitespace-pre-wrap">
+                    {profile.bio || '*'}
                   </p>
-                  {isSelf && (
-                    <button
-                      onClick={onOpenStudio}
-                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-colors cursor-pointer"
-                    >
-                      Open BoBlox Studio
-                    </button>
-                  )}
+                )}
+
+                {/* Divider Line */}
+                <div className="border-b border-purple-500/20 my-3" />
+
+                {/* Alias Row */}
+                <div className="flex items-center justify-between text-sm text-purple-300/70 py-0.5">
+                  <span className="font-medium text-purple-200">Alias</span>
+                  <button
+                    onClick={() => setShowAliasInput((p) => !p)}
+                    className="text-purple-400 hover:text-purple-200 cursor-pointer"
+                    title="Edit Alias"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {userExperiences.map((exp) => (
-                    <div
-                      key={exp.id}
-                      className="group rounded-2xl bg-[#150e2b] border border-purple-500/20 hover:border-purple-400/40 overflow-hidden shadow-lg hover:shadow-purple-950/60 transition-all flex flex-col justify-between"
-                    >
-                      <div>
-                        {/* Visual Card Banner */}
-                        <div className="aspect-[16/9] w-full bg-gradient-to-br from-[#2a1b4d] via-[#1a1133] to-[#0e081e] flex flex-col items-center justify-center p-4 relative overflow-hidden group-hover:scale-[1.02] transition-transform">
-                          <div className="w-12 h-12 rounded-2xl bg-purple-600/30 border border-purple-400/40 flex items-center justify-center text-purple-200 mb-2">
-                            <Boxes className="w-6 h-6" />
-                          </div>
-                          <span className="font-display font-bold text-white text-sm text-center line-clamp-1">
-                            {exp.name}
-                          </span>
-                        </div>
 
-                        <div className="p-4 space-y-2">
-                          <h4 className="font-display font-bold text-white text-sm group-hover:text-purple-200 transition-colors">
-                            {exp.name}
-                          </h4>
-                          <p className="text-xs text-purple-300/70 line-clamp-2">
-                            {exp.description || 'Custom 3D sandbox experience.'}
-                          </p>
-                          <div className="flex items-center justify-between text-[11px] text-purple-400/70 pt-1 font-mono">
-                            <span>{exp.parts?.length || 0} Parts</span>
-                            <span>{exp.likes || 0} Likes</span>
-                            <span>{exp.visits || 0} Visits</span>
-                          </div>
-                        </div>
-                      </div>
+                {/* Footer Link Row (Report Abuse) */}
+                <div className="flex items-center justify-end text-xs pt-1">
+                  <button
+                    onClick={() => {}}
+                    className="text-red-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    Report Abuse
+                  </button>
+                </div>
+              </div>
 
-                      <div className="p-4 pt-0">
-                        <button
-                          onClick={() => onPlayExperience(exp)}
-                          className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+              {/* ================= CURRENTLY WEARING SECTION (COMPACT DARK THEME) ================= */}
+              <div className="space-y-3 pt-1">
+                <h2 className="text-xl font-bold text-white font-display">Currently Wearing</h2>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
+                  {/* Left Column: Compact Rounded Avatar Container with Spinning 3D and 2D mode */}
+                  <div className="md:col-span-5 lg:col-span-4 bg-[#0f091f] rounded-2xl p-2.5 relative flex items-center justify-center min-h-[200px] max-h-[220px] shadow-inner border border-purple-500/20 overflow-hidden">
+                    <ProfileAvatarShowcase
+                      colors={effectiveProfile.avatarColors}
+                      selectedFaceId={effectiveProfile.selectedFaceId}
+                      shirtDataUrl={effectiveProfile.shirtDataUrl}
+                      pantsDataUrl={effectiveProfile.pantsDataUrl}
+                      selectedHairId={effectiveProfile.selectedHairId}
+                      hairColor={effectiveProfile.hairColor}
+                      customHairObj={effectiveProfile.customHairObj}
+                      selectedAccessoryId={effectiveProfile.selectedAccessoryId}
+                      is3D={wearing3DMode}
+                      onToggle3D={() => setWearing3DMode((p) => !p)}
+                    />
+                  </div>
+
+                  {/* Right Column: 4x2 Grid of Worn Item Thumbnails with Folded Clothing & Pagination */}
+                  <div className="md:col-span-7 lg:col-span-8 flex flex-col justify-between space-y-2.5">
+                    <div className="grid grid-cols-4 gap-2.5">
+                      {wornItems.slice(wearingPage * 8, wearingPage * 8 + 8).map((item) => (
+                        <div
+                          key={item.id}
+                          className="bg-[#1b1238] hover:bg-[#26194e] border border-purple-500/20 rounded-xl p-2 flex flex-col items-center justify-center aspect-square shadow-2xs transition-all hover:scale-105 cursor-pointer relative group"
+                          title={`${item.name} (${item.type})`}
                         >
-                          <Play className="w-4 h-4 fill-white" />
-                          <span>Play Now</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {creationsFilter === 'clothing' && (
-            <div>
-              {userCreatedShirts.length === 0 && userCreatedPants.length === 0 ? (
-                <div className="p-12 rounded-2xl bg-[#140e29] border border-purple-500/20 text-center space-y-3">
-                  <Shirt className="w-10 h-10 text-purple-400/40 mx-auto" />
-                  <h4 className="font-display font-bold text-white text-base">No clothing creations yet</h4>
-                  <p className="text-xs text-purple-300/70 max-w-sm mx-auto">
-                    {isSelf
-                      ? 'Create and upload your own custom shirts or pants in BoBlox Studio to show them off here!'
-                      : `${profile.username} has not created any custom clothing items yet.`}
-                  </p>
-                  {isSelf && (
-                    <button
-                      onClick={onOpenStudio}
-                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-colors cursor-pointer"
-                    >
-                      Create Clothing in Studio
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-4">
-                  {[...userCreatedShirts, ...userCreatedPants].map((cloth) => (
-                    <div
-                      key={cloth.id}
-                      className="p-3.5 rounded-2xl bg-[#150e2b] border border-purple-500/20 flex flex-col justify-between group hover:border-purple-400/50 transition-all"
-                    >
-                      <div className="aspect-square w-full rounded-xl bg-[#0e091b] p-2 flex items-center justify-center mb-2 overflow-hidden">
-                        {cloth.previewUrl ? (
-                          <img
-                            src={cloth.previewUrl}
-                            alt={cloth.name}
-                            className="w-full h-full object-contain filter drop-shadow group-hover:scale-105 transition-transform"
-                          />
-                        ) : (
-                          <Shirt className="w-8 h-8 text-purple-400" />
-                        )}
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-mono font-bold uppercase text-purple-400">
-                          {cloth.type}
-                        </span>
-                        <h4 className="font-bold text-white text-xs truncate">{cloth.name}</h4>
-                        <p className="text-[10px] text-purple-300/60 mt-0.5">By {profile.username}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 3: INVENTORY */}
-      {activeTab === 'inventory' && (
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setInventoryFilter('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                  inventoryFilter === 'all'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-purple-950/40 text-purple-300 hover:text-white'
-                }`}
-              >
-                All Wardrobe
-              </button>
-              <button
-                onClick={() => setInventoryFilter('shirts')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                  inventoryFilter === 'shirts'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-purple-950/40 text-purple-300 hover:text-white'
-                }`}
-              >
-                Shirts ({isSelf ? ownedShirts.length : profile.shirtDataUrl ? 1 : 0})
-              </button>
-              <button
-                onClick={() => setInventoryFilter('pants')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                  inventoryFilter === 'pants'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-purple-950/40 text-purple-300 hover:text-white'
-                }`}
-              >
-                Pants ({isSelf ? ownedPants.length : profile.pantsDataUrl ? 1 : 0})
-              </button>
-            </div>
-
-            <button
-              onClick={onOpenMarketplace}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md transition-colors flex items-center gap-2 cursor-pointer shrink-0"
-            >
-              <Tag className="w-4 h-4" />
-              <span>Get More in Marketplace (FREE)</span>
-            </button>
-          </div>
-
-          {/* If viewing self, show real items from inventory */}
-          {isSelf ? (
-            <div className="space-y-6">
-              {(inventoryFilter === 'all' || inventoryFilter === 'shirts') && (
-                <div>
-                  <h4 className="font-bold text-white text-sm mb-3 flex items-center gap-2">
-                    <Shirt className="w-4 h-4 text-purple-400" />
-                    <span>Owned Shirts ({ownedShirts.length})</span>
-                  </h4>
-                  {ownedShirts.length === 0 ? (
-                    <div className="p-8 rounded-xl bg-purple-950/20 border border-purple-500/20 text-center text-xs text-purple-300/60">
-                      No custom shirts owned yet. Visit the Marketplace to claim free community clothing!
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-4">
-                      {ownedShirts.map((s) => {
-                        const isEquipped = profile.shirtDataUrl === s.dataUrl;
-                        return (
-                          <div
-                            key={s.id}
-                            className="p-3 rounded-xl bg-[#150e2b] border border-purple-500/20 flex flex-col justify-between"
-                          >
-                            <div className="aspect-square w-full rounded-lg bg-[#0e091b] p-2 flex items-center justify-center mb-2">
-                              {s.previewUrl ? (
-                                <img src={s.previewUrl} alt={s.name} className="w-full h-full object-contain" />
-                              ) : (
-                                <Shirt className="w-8 h-8 text-purple-400" />
-                              )}
+                          {item.type === 'Shirt' ? (
+                            <ClothingItemThumb
+                              dataUrl={item.previewUrl}
+                              type="shirt"
+                              name={item.name}
+                            />
+                          ) : item.type === 'Pants' ? (
+                            <ClothingItemThumb
+                              dataUrl={item.previewUrl}
+                              type="pants"
+                              name={item.name}
+                            />
+                          ) : item.type === 'Face' ? (
+                            <img
+                              src={getFacePreviewUrl(profile.selectedFaceId || 'classic-smile')}
+                              alt="Face"
+                              className="w-7 h-7 object-contain"
+                            />
+                          ) : item.type === 'Animation' ? (
+                            <div className="w-full h-full rounded bg-purple-950/40 border border-purple-500/20 flex items-center justify-center">
+                              <span className="text-[10px] font-bold text-purple-300 uppercase">R6</span>
                             </div>
-                            <p className="font-bold text-white text-xs truncate mb-2">{s.name}</p>
-                            <button
-                              onClick={() => onEquipShirt(s.dataUrl)}
-                              className={`w-full py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                isEquipped
-                                  ? 'bg-purple-600/30 border border-purple-400 text-purple-200'
-                                  : 'bg-purple-600 hover:bg-purple-500 text-white'
-                              }`}
-                            >
-                              {isEquipped ? 'Worn ✓' : 'Wear'}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {(inventoryFilter === 'all' || inventoryFilter === 'pants') && (
-                <div>
-                  <h4 className="font-bold text-white text-sm mb-3 flex items-center gap-2">
-                    <Tag className="w-4 h-4 text-purple-400" />
-                    <span>Owned Pants ({ownedPants.length})</span>
-                  </h4>
-                  {ownedPants.length === 0 ? (
-                    <div className="p-8 rounded-xl bg-purple-950/20 border border-purple-500/20 text-center text-xs text-purple-300/60">
-                      No custom pants owned yet. Visit the Marketplace to claim free community clothing!
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-4">
-                      {ownedPants.map((p) => {
-                        const isEquipped = profile.pantsDataUrl === p.dataUrl;
-                        return (
-                          <div
-                            key={p.id}
-                            className="p-3 rounded-xl bg-[#150e2b] border border-purple-500/20 flex flex-col justify-between"
-                          >
-                            <div className="aspect-square w-full rounded-lg bg-[#0e091b] p-2 flex items-center justify-center mb-2">
-                              {p.previewUrl ? (
-                                <img src={p.previewUrl} alt={p.name} className="w-full h-full object-contain" />
-                              ) : (
-                                <Tag className="w-8 h-8 text-purple-400" />
-                              )}
-                            </div>
-                            <p className="font-bold text-white text-xs truncate mb-2">{p.name}</p>
-                            <button
-                              onClick={() => onEquipPants(p.dataUrl)}
-                              className={`w-full py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                isEquipped
-                                  ? 'bg-purple-600/30 border border-purple-400 text-purple-200'
-                                  : 'bg-purple-600 hover:bg-purple-500 text-white'
-                              }`}
-                            >
-                              {isEquipped ? 'Worn ✓' : 'Wear'}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            /* If viewing another user, showcase their equipped clothing */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-5 rounded-2xl bg-[#150e2b] border border-purple-500/20 space-y-3">
-                <span className="text-[10px] font-bold text-purple-400 uppercase font-mono">Equipped Shirt</span>
-                <p className="font-bold text-white text-sm">
-                  {profile.shirtDataUrl ? `${profile.username}'s Shirt` : 'Default Grey Avatar Shirt'}
-                </p>
-                <button
-                  onClick={onOpenMarketplace}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors cursor-pointer"
-                >
-                  Explore Marketplace
-                </button>
-              </div>
-
-              <div className="p-5 rounded-2xl bg-[#150e2b] border border-purple-500/20 space-y-3">
-                <span className="text-[10px] font-bold text-purple-400 uppercase font-mono">Equipped Pants</span>
-                <p className="font-bold text-white text-sm">
-                  {profile.pantsDataUrl ? `${profile.username}'s Pants` : 'Default Avatar Pants'}
-                </p>
-                <button
-                  onClick={onOpenMarketplace}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors cursor-pointer"
-                >
-                  Explore Marketplace
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 4: FRIENDS & CONNECTIONS */}
-      {activeTab === 'friends' && (
-        <div className="space-y-4">
-          <h3 className="font-display font-bold text-white text-base flex items-center gap-2">
-            <Users className="w-4 h-4 text-purple-400" />
-            <span>Friends ({profile.friends?.length || 0})</span>
-          </h3>
-
-          {(!profile.friends || profile.friends.length === 0) ? (
-            <div className="p-12 rounded-2xl bg-[#140e29] border border-purple-500/20 text-center space-y-2">
-              <Users className="w-10 h-10 text-purple-400/40 mx-auto" />
-              <h4 className="font-bold text-white text-sm">No friends added yet</h4>
-              <p className="text-xs text-purple-300/70">
-                Use the search bar at the top or play multiplayer experiences to connect with players!
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {resolvedFriends.length > 0 ? (
-                resolvedFriends.map((friend) => {
-                  const isOnline = Date.now() - (friend.lastActive || 0) < 1000 * 60 * 10;
-                  return (
-                    <div
-                      key={friend.id}
-                      onClick={() => onNavigateToUser?.(friend.id)}
-                      className="p-3.5 rounded-xl bg-[#150e2b] border border-purple-500/20 hover:border-purple-400/50 flex items-center justify-between gap-3 transition-all cursor-pointer group shadow-sm hover:shadow-purple-950/50"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <AvatarProfileIcon
-                          colors={friend.avatarColors}
-                          selectedFaceId={friend.selectedFaceId}
-                          shirtDataUrl={friend.shirtDataUrl}
-                          pantsDataUrl={friend.pantsDataUrl}
-                          selectedHairId={friend.selectedHairId}
-                          hairColor={friend.hairColor}
-                          size={46}
-                          shape="circle"
-                          border={false}
-                          framing="bust"
-                        />
-                        <div className="truncate">
-                          <p className="font-bold text-white text-xs truncate group-hover:text-purple-200 transition-colors flex items-center gap-1">
-                            <span>{friend.displayName || friend.username}</span>
-                            {isVerifiedUser(friend.username) && (
-                              <VerifiedBadge username={friend.username} size="sm" />
-                            )}
-                          </p>
-                          <p className="text-[11px] text-purple-300/70 font-mono truncate">
-                            @{friend.username}
-                          </p>
-                          <div className="mt-0.5 flex items-center gap-1 text-[10px]">
-                            {friend.currentExperienceName ? (
-                              <span className="text-emerald-400 font-bold flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                Playing {friend.currentExperienceName}
-                              </span>
-                            ) : isOnline ? (
-                              <span className="text-emerald-400 font-medium flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                Online
-                              </span>
-                            ) : (
-                              <span className="text-purple-400/50">Offline</span>
-                            )}
-                          </div>
+                          ) : item.previewUrl ? (
+                            <img
+                              src={item.previewUrl}
+                              alt={item.name}
+                              className="w-full h-full object-contain filter drop-shadow-xs"
+                            />
+                          ) : (
+                            <Sparkles className="w-6 h-6 text-purple-400" />
+                          )}
                         </div>
-                      </div>
-
-                      <div className="shrink-0 flex items-center gap-1.5">
-                        {friend.currentExperienceId && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const exp = allExperiences.find((x) => x.id === friend.currentExperienceId);
-                              if (exp) onPlayExperience(exp);
-                            }}
-                            className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-transform active:scale-95"
-                            title="Join Friend in Game"
-                          >
-                            <Play className="w-3.5 h-3.5 fill-white" />
-                          </button>
-                        )}
-                        <ArrowRight className="w-4 h-4 text-purple-400/40 group-hover:text-purple-300 group-hover:translate-x-0.5 transition-all" />
-                      </div>
+                      ))}
                     </div>
-                  );
-                })
-              ) : (
-                profile.friends.map((friendId) => (
-                  <div
-                    key={friendId}
-                    onClick={() => onNavigateToUser?.(friendId)}
-                    className="p-3.5 rounded-xl bg-[#150e2b] border border-purple-500/20 hover:border-purple-400/40 flex items-center gap-3 transition-all cursor-pointer group shadow-sm hover:shadow-purple-950/50 animate-pulse"
-                  >
-                    <div className="w-11 h-11 rounded-full bg-purple-900/40 shrink-0" />
-                    <div className="truncate">
-                      <p className="font-bold text-white text-xs truncate">Loading friend...</p>
-                      <span className="text-[10px] text-purple-400/60">Connecting</span>
+
+                    {/* Pagination Dots Below Grid: ● ○ */}
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <button
+                        onClick={() => setWearingPage(0)}
+                        className={`w-2.5 h-2.5 rounded-full transition-all cursor-pointer ${
+                          wearingPage === 0 ? 'bg-purple-400 scale-125' : 'bg-purple-950/60 border border-purple-500/30 hover:bg-purple-700'
+                        }`}
+                      />
+                      <button
+                        onClick={() => setWearingPage(1)}
+                        className={`w-2.5 h-2.5 rounded-full transition-all cursor-pointer ${
+                          wearingPage === 1 ? 'bg-purple-400 scale-125' : 'bg-purple-950/60 border border-purple-500/30 hover:bg-purple-700'
+                        }`}
+                      />
                     </div>
                   </div>
-                ))
+                </div>
+              </div>
+
+              {/* ================= FRIENDS SECTION (HORIZONTAL ROW) ================= */}
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-white font-display">
+                    Friends ({profile.friends?.length || 91})
+                  </h2>
+                  <button
+                    onClick={() => {}}
+                    className="text-sm font-semibold text-purple-300 hover:text-white flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>See All</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {resolvedFriends.length > 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-8 gap-4">
+                    {resolvedFriends.slice(0, 8).map((friend) => (
+                      <div
+                        key={friend.id}
+                        onClick={() => onNavigateToUser?.(friend.id)}
+                        className="flex flex-col items-center text-center gap-2 group cursor-pointer"
+                      >
+                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden bg-[#1a1233] border border-purple-500/30 group-hover:border-purple-400 group-hover:scale-105 transition-transform flex items-center justify-center shadow-md">
+                          <AvatarProfileIcon
+                            colors={friend.avatarColors}
+                            selectedFaceId={friend.selectedFaceId}
+                            shirtDataUrl={friend.shirtDataUrl}
+                            pantsDataUrl={friend.pantsDataUrl}
+                            selectedHairId={friend.selectedHairId}
+                            hairColor={friend.hairColor}
+                            size={64}
+                            shape="circle"
+                            border={false}
+                            framing="bust"
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-purple-200 truncate w-full group-hover:text-white">
+                          {friend.displayName || friend.username}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-8 gap-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="flex flex-col items-center text-center gap-2">
+                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#1a1233] border border-purple-500/20 flex items-center justify-center shadow-xs">
+                          <User className="w-6 h-6 text-purple-400/60" />
+                        </div>
+                        <span className="text-xs font-semibold text-purple-300/70">Friend {i + 1}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ================= ROBLOX BADGES & ACHIEVEMENTS ================= */}
+              <div className="space-y-4 pt-4 border-t border-purple-500/20">
+                <h2 className="text-xl font-bold text-white font-display">Roblox Badges</h2>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-xl bg-[#1b1238] border border-purple-500/20 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 flex items-center justify-center mx-auto shadow-xs font-bold text-lg">
+                      🛡️
+                    </div>
+                    <h4 className="font-bold text-xs text-white">Administrator</h4>
+                    <p className="text-[11px] text-purple-300/60">BoBlox verified member</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#1b1238] border border-purple-500/20 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-blue-500/20 border border-blue-500/30 text-blue-300 flex items-center justify-center mx-auto shadow-xs font-bold text-lg">
+                      🔨
+                    </div>
+                    <h4 className="font-bold text-xs text-white">Bricksmith</h4>
+                    <p className="text-[11px] text-purple-300/60">Master world creator</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#1b1238] border border-purple-500/20 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 flex items-center justify-center mx-auto shadow-xs font-bold text-lg">
+                      🌟
+                    </div>
+                    <h4 className="font-bold text-xs text-white">Veteran</h4>
+                    <p className="text-[11px] text-purple-300/60">Active community pioneer</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#1b1238] border border-purple-500/20 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 flex items-center justify-center mx-auto shadow-xs font-bold text-lg">
+                      🏆
+                    </div>
+                    <h4 className="font-bold text-xs text-white">Friendship</h4>
+                    <p className="text-[11px] text-purple-300/60">Over 50+ network friends</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Statistics Row */}
+              <div className="space-y-3 pt-4 border-t border-purple-500/20">
+                <h2 className="text-xl font-bold text-white font-display">Statistics</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                  <div className="p-3 bg-[#1b1238] rounded-xl border border-purple-500/20">
+                    <span className="text-xs text-purple-300/60 block">Join Date</span>
+                    <span className="font-bold text-white">{profile.joinedDate || 'Sep 28, 2026'}</span>
+                  </div>
+                  <div className="p-3 bg-[#1b1238] rounded-xl border border-purple-500/20">
+                    <span className="text-xs text-purple-300/60 block">Place Visits</span>
+                    <span className="font-bold text-white">
+                      {userExperiences.reduce((sum, e) => sum + (e.visits || 0), 0) || 12}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-[#1b1238] rounded-xl border border-purple-500/20">
+                    <span className="text-xs text-purple-300/60 block">Creations</span>
+                    <span className="font-bold text-white">{totalUserCreations}</span>
+                  </div>
+                  <div className="p-3 bg-[#1b1238] rounded-xl border border-purple-500/20">
+                    <span className="text-xs text-purple-300/60 block">Status</span>
+                    {(isSelf || (profile.lastActive && Date.now() - profile.lastActive < 1000 * 150)) ? (
+                      <span className="font-bold text-emerald-400 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Online
+                      </span>
+                    ) : (
+                      <span className="font-bold text-gray-400 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-gray-500" />
+                        Offline
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: CREATIONS */}
+          {activeTab === 'creations' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-500/20 pb-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCreationsFilter('experiences')}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      creationsFilter === 'experiences'
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'bg-[#1b1238] text-purple-200 hover:bg-[#27194f] border border-purple-500/20'
+                    }`}
+                  >
+                    Experiences ({userExperiences.length})
+                  </button>
+                  <button
+                    onClick={() => setCreationsFilter('clothing')}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      creationsFilter === 'clothing'
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'bg-[#1b1238] text-purple-200 hover:bg-[#27194f] border border-purple-500/20'
+                    }`}
+                  >
+                    Clothing ({userCreatedShirts.length + userCreatedPants.length})
+                  </button>
+                </div>
+
+                {isSelf && (
+                  <button
+                    onClick={onOpenStudio}
+                    className="px-4 py-2 rounded-lg bg-[#00a2ff] hover:bg-[#008fe6] text-white font-bold text-xs shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Boxes className="w-4 h-4" />
+                    <span>Create in Studio</span>
+                  </button>
+                )}
+              </div>
+
+              {creationsFilter === 'experiences' && (
+                <div>
+                  {userExperiences.length === 0 ? (
+                    <div className="p-12 rounded-xl bg-[#1b1238] border border-purple-500/20 text-center space-y-3">
+                      <Boxes className="w-10 h-10 text-purple-400/60 mx-auto" />
+                      <h4 className="font-bold text-white text-base">No experiences published yet</h4>
+                      <p className="text-xs text-purple-300/60 max-w-sm mx-auto">
+                        {isSelf
+                          ? 'Head to BoBlox Studio to build and publish your first custom 3D sandbox place!'
+                          : `${profile.username} has not published any experiences yet.`}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {userExperiences.map((exp) => (
+                        <div
+                          key={exp.id}
+                          className="group rounded-xl bg-[#1b1238] border border-purple-500/20 hover:border-purple-400 overflow-hidden shadow-md hover:shadow-xl transition-all flex flex-col justify-between"
+                        >
+                          <div>
+                            <div className="aspect-[16/9] w-full bg-gradient-to-br from-purple-950 to-[#0c0915] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+                              <Boxes className="w-10 h-10 text-purple-300/80 mb-2" />
+                              <span className="font-bold text-white text-sm text-center line-clamp-1">
+                                {exp.name}
+                              </span>
+                            </div>
+
+                            <div className="p-4 space-y-2">
+                              <h4 className="font-bold text-white text-sm">{exp.name}</h4>
+                              <p className="text-xs text-purple-300/70 line-clamp-2">
+                                {exp.description || 'Custom 3D sandbox place.'}
+                              </p>
+                              <div className="flex items-center justify-between text-xs text-purple-400 font-mono pt-1">
+                                <span>{exp.parts?.length || 0} Parts</span>
+                                <span>{exp.likes || 0} Likes</span>
+                                <span>{exp.visits || 0} Visits</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 pt-0">
+                            <button
+                              onClick={() => onPlayExperience(exp)}
+                              className="w-full py-2.5 rounded-lg bg-[#00b06f] hover:bg-[#009b61] text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Play className="w-4 h-4 fill-white" />
+                              <span>Play Now</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {creationsFilter === 'clothing' && (
+                <div>
+                  {userCreatedShirts.length === 0 && userCreatedPants.length === 0 ? (
+                    <div className="p-12 rounded-xl bg-[#1b1238] border border-purple-500/20 text-center space-y-3">
+                      <Shirt className="w-10 h-10 text-purple-400/60 mx-auto" />
+                      <h4 className="font-bold text-white text-base">No clothing creations yet</h4>
+                      <p className="text-xs text-purple-300/60 max-w-sm mx-auto">
+                        {isSelf
+                          ? 'Create and upload custom shirts or pants in BoBlox Studio to showcase them here!'
+                          : `${profile.username} has not created custom clothing items yet.`}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-4">
+                      {[...userCreatedShirts, ...userCreatedPants].map((cloth) => (
+                        <div
+                          key={cloth.id}
+                          className="p-3.5 rounded-xl bg-[#1b1238] border border-purple-500/20 flex flex-col justify-between group hover:border-purple-400 transition-all"
+                        >
+                          <div className="aspect-square w-full rounded-lg bg-[#0f091f] border border-purple-500/20 p-2 flex items-center justify-center mb-2 overflow-hidden">
+                            <ClothingItemThumb
+                              dataUrl={cloth.previewUrl || cloth.dataUrl}
+                              type={cloth.type}
+                              name={cloth.name}
+                              className="group-hover:scale-105 transition-transform"
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-mono font-bold uppercase text-purple-400">
+                              {cloth.type}
+                            </span>
+                            <h4 className="font-bold text-white text-xs truncate">{cloth.name}</h4>
+                            <p className="text-[10px] text-purple-300/60 mt-0.5">By {profile.username}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Check, X, Gift, Sparkles, Clock, UserCheck } from 'lucide-react';
+import { Send, Check, X, Gift, Clock, UserCheck } from 'lucide-react';
 import bobuxImg from '../assets/bobux.png';
 import AvatarProfileIcon from './AvatarProfileIcon';
 import VerifiedBadge, { isVerifiedUser } from './VerifiedBadge';
@@ -9,6 +9,12 @@ export const BOBUX_STORAGE_KEY = 'boblox_user_currency_v2';
 export const OWNER_BOBUX_AMOUNT = 100_000_000; // 100 Million Bobux for Boblox account
 export const DEFAULT_PLAYER_BOBUX = 10; // 10 Bobux starting balance for players
 export const DAILY_CLAIM_AMOUNT = 10; // Claim daily 10 Bobux
+
+export function openTransferBobuxModal(targetUsername?: string) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('boblox-open-transfer', { detail: { targetUsername } }));
+  }
+}
 
 export function getSavedBobux(username?: string, isOwner?: boolean): number {
   const isBoblox = username?.toLowerCase() === 'boblox' || isOwner === true;
@@ -30,6 +36,9 @@ export function saveBobux(amount: number, username?: string) {
     const key = username ? `${BOBUX_STORAGE_KEY}_${username.toLowerCase()}` : BOBUX_STORAGE_KEY;
     localStorage.setItem(key, amount.toString());
     localStorage.setItem(BOBUX_STORAGE_KEY, amount.toString());
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('boblox-bobux-updated', { detail: { amount, username } }));
+    }
   } catch (e) {
     // ignore
   }
@@ -90,7 +99,7 @@ interface BobuxCurrencyProps {
 export default function BobuxCurrency({
   currentUsername = 'Player',
   isOwnerAccount = false,
-  friendsList = []
+  friendsList = [],
 }: BobuxCurrencyProps) {
   const [bobux, setBobux] = useState<number>(() => getSavedBobux(currentUsername, isOwnerAccount));
   const [isOpen, setIsOpen] = useState(false);
@@ -110,6 +119,30 @@ export default function BobuxCurrency({
     const val = getSavedBobux(currentUsername, isOwnerAccount);
     setBobux(val);
   }, [currentUsername, isOwnerAccount]);
+
+  // Listen for global bobux updates & open transfer event
+  useEffect(() => {
+    const handleUpdate = () => {
+      setBobux(getSavedBobux(currentUsername, isOwnerAccount));
+    };
+    const handleOpenTransfer = (e: any) => {
+      const target = e.detail?.targetUsername;
+      if (target) {
+        setRecipient(target);
+        const match = friendsList.find((f) => f.username.toLowerCase() === target.toLowerCase());
+        if (match) setSelectedFriend(match);
+      }
+      setShowTransferModal(true);
+      setIsOpen(false);
+    };
+
+    window.addEventListener('boblox-bobux-updated', handleUpdate);
+    window.addEventListener('boblox-open-transfer', handleOpenTransfer);
+    return () => {
+      window.removeEventListener('boblox-bobux-updated', handleUpdate);
+      window.removeEventListener('boblox-open-transfer', handleOpenTransfer);
+    };
+  }, [currentUsername, isOwnerAccount, friendsList]);
 
   // Update daily claim timer
   useEffect(() => {
@@ -174,6 +207,11 @@ export default function BobuxCurrency({
 
     const nextBalance = bobux - amountNum;
     handleUpdateBobux(nextBalance);
+
+    // Credit recipient
+    const recipientCurrent = getSavedBobux(targetUser);
+    saveBobux(recipientCurrent + amountNum, targetUser);
+
     const displayName = selectedFriend ? (selectedFriend.displayName || selectedFriend.username) : targetUser;
     setTransferSuccess(`Successfully transferred ${amountNum.toLocaleString()} Bobux to @${targetUser} (${displayName})!`);
     setTimeout(() => {
@@ -269,17 +307,17 @@ export default function BobuxCurrency({
                 className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md shadow-purple-600/30 hover:shadow-purple-600/50 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>Transfer</span>
+                <span>Transfer Robux</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Transfer Bobux Modal */}
+      {/* Transfer Bobux Modal (Centered on Screen) */}
       {showTransferModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg rounded-2xl bg-[#140e28] border border-purple-500/30 shadow-2xl p-6 relative space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-[#140e28] border border-purple-500/30 shadow-2xl p-6 relative space-y-4 max-h-[90vh] overflow-y-auto">
             {/* Close Button */}
             <button
               onClick={() => {
@@ -300,7 +338,7 @@ export default function BobuxCurrency({
               </div>
               <div>
                 <h3 className="text-lg font-display font-black text-white">Transfer Robux</h3>
-                <p className="text-xs text-purple-300/70">Send Robux directly to your real friends</p>
+                <p className="text-xs text-purple-300/70">Send Robux directly to another player</p>
               </div>
             </div>
 
@@ -354,7 +392,7 @@ export default function BobuxCurrency({
                         setSelectedFriend(null);
                         setRecipient('');
                       }}
-                      className="p-1 text-purple-400 hover:text-white rounded-lg hover:bg-purple-800/40 text-xs"
+                      className="p-1 text-purple-400 hover:text-white rounded-lg hover:bg-purple-800/40 text-xs cursor-pointer"
                       title="Clear selection"
                     >
                       <X className="w-4 h-4" />

@@ -65,6 +65,10 @@ export default function BulkClothingUploader({
     pantsCount: number;
   } | null>(null);
 
+  // Pricing mode for batch upload: 'free' or 'bobux'
+  const [batchPriceType, setBatchPriceType] = useState<'free' | 'bobux'>('free');
+  const [batchBobuxPrice, setBatchBobuxPrice] = useState<number>(5);
+
   const shirtInputRef = useRef<HTMLInputElement | null>(null);
   const pantsInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -368,6 +372,7 @@ export default function BulkClothingUploader({
       saveMultiplePantsToInventory(customPants);
 
       // 4. Convert to Marketplace Items
+      const effectivePrice = batchPriceType === 'free' ? 0 : Math.max(1, batchBobuxPrice);
       const marketplaceItems: MarketplaceClothingItem[] = [
         ...customShirts.map((s) => ({
           id: s.id,
@@ -377,7 +382,7 @@ export default function BulkClothingUploader({
           previewUrl: s.previewUrl,
           creatorId: currentUser.id,
           creatorUsername: currentUser.username,
-          price: 0,
+          price: effectivePrice,
           boughtCount: 0,
           onSale: true,
           createdAt: s.createdAt,
@@ -390,7 +395,7 @@ export default function BulkClothingUploader({
           previewUrl: p.previewUrl,
           creatorId: currentUser.id,
           creatorUsername: currentUser.username,
-          price: 0,
+          price: effectivePrice,
           boughtCount: 0,
           onSale: true,
           createdAt: p.createdAt,
@@ -813,7 +818,46 @@ export default function BulkClothingUploader({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          {/* Price Selector */}
+          <div className="flex items-center gap-2 bg-[#0e0a1e] p-1.5 rounded-xl border border-purple-500/30">
+            <button
+              type="button"
+              onClick={() => setBatchPriceType('free')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                batchPriceType === 'free'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-white/60 hover:text-white'
+              }`}
+            >
+              Free (0 R$)
+            </button>
+            <button
+              type="button"
+              onClick={() => setBatchPriceType('bobux')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                batchPriceType === 'bobux'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-white/60 hover:text-white'
+              }`}
+            >
+              Cost Bobux
+            </button>
+            {batchPriceType === 'bobux' && (
+              <div className="flex items-center gap-1 pl-1 pr-2">
+                <span className="text-amber-400 font-bold text-xs">R$</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={1000000}
+                  value={batchBobuxPrice}
+                  onChange={(e) => setBatchBobuxPrice(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-16 px-2 py-1 bg-black/50 border border-amber-500/40 rounded-lg text-white font-mono font-bold text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
+                />
+              </div>
+            )}
+          </div>
+
           <button
             onClick={handleUploadEverything}
             disabled={totalValidItems === 0 || isUploading || isProcessingFiles}
