@@ -427,7 +427,7 @@ export default function ProfilePage({
                     className="w-full px-3 py-2 text-left text-purple-200 hover:bg-purple-900/40 flex items-center gap-2 cursor-pointer"
                   >
                     <img src={bobuxImg} alt="" className="w-4 h-4 object-contain" />
-                    <span>Transfer Robux</span>
+                    <span>Transfer Bobux</span>
                   </button>
                 </div>
               )}
@@ -454,7 +454,7 @@ export default function ProfilePage({
                   <button
                     onClick={() => openTransferBobuxModal()}
                     className="px-3.5 py-2 rounded-lg bg-[#00b06f] hover:bg-[#009b61] text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    title="Transfer Robux"
+                    title="Transfer Bobux"
                   >
                     <img src={bobuxImg} alt="" className="w-3.5 h-3.5 object-contain" />
                     <span>Transfer</span>
@@ -505,11 +505,11 @@ export default function ProfilePage({
                     {isFriend ? 'Unfriend' : hasSentRequest ? 'Request Sent' : 'Add Friend'}
                   </button>
 
-                  {/* Direct Transfer Robux Button */}
+                  {/* Direct Transfer Bobux Button */}
                   <button
                     onClick={() => openTransferBobuxModal(profile.username)}
                     className="px-3 py-2 rounded-lg bg-[#00b06f] hover:bg-[#009b61] text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1 cursor-pointer active:scale-95"
-                    title={`Transfer Robux to ${profile.username}`}
+                    title={`Transfer Bobux to ${profile.username}`}
                   >
                     <img src={bobuxImg} alt="" className="w-3.5 h-3.5 object-contain" />
                     <span>Transfer</span>

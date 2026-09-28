@@ -62,6 +62,15 @@ import { RagdollShatterManager } from '../utils/ragdollShatter';
 import { gameAudio } from '../utils/gameAudio';
 import StudioScriptEditor from './StudioScriptEditor';
 import { uploadToCloudinary } from '../services/cloudinary';
+import {
+  FittedAccessoryItem,
+  AccessoryCategory,
+  AttachmentBone,
+  getSavedFittedAccessories,
+  saveFittedAccessoryLocally,
+  publishFittedAccessoryToMarketplace,
+  ACCESSORY_UPLOAD_FEE,
+} from '../types/fittedAccessories';
 
 interface BoBloxStudio3DProps {
   experience: ExperienceData;
@@ -284,6 +293,19 @@ export default function BoBloxStudio3D({
   } | null>(null);
   const faceHighlightMeshRef = useRef<THREE.Mesh | null>(null);
   const [insertObjectMenuPartId, setInsertObjectMenuPartId] = useState<string | null>(null);
+
+  // Fitted Accessories & Dummy Modal States
+  const [showModelImportModal, setShowModelImportModal] = useState(false);
+  const [showSaveAccessoryModal, setShowSaveAccessoryModal] = useState(false);
+  const [showMarketplacePublishModal, setShowMarketplacePublishModal] = useState(false);
+  const [accessoryToPublish, setAccessoryToPublish] = useState<FittedAccessoryItem | null>(null);
+  const [modelTitle, setModelTitle] = useState('Custom 3D Model');
+  const [modelCategory, setModelCategory] = useState<AccessoryCategory>('back');
+  const [modelAttachmentTarget, setModelAttachmentTarget] = useState<AttachmentBone>('Back');
+  const [modelColor, setModelColor] = useState('#a855f7');
+  const [modelBobuxPrice, setModelBobuxPrice] = useState<number>(0);
+  const [savedFittedModels, setSavedFittedModels] = useState<FittedAccessoryItem[]>(getSavedFittedAccessories);
+  const [publishingAccessory, setPublishingAccessory] = useState(false);
 
   // Studio Free-Flight Camera controls
   const studioCamPosRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 14, 26));
@@ -720,6 +742,96 @@ end`,
     setToolMode('move');
     setInsertPartMenuOpen(false);
     showToast(`Added ${shape} Part (Move Tool active)`);
+  };
+
+  const handleAddFittingDummy = () => {
+    pushUndoSnapshot();
+    const id = `dummy-${Date.now()}`;
+    const dummyPart: StudioPart = {
+      id,
+      name: 'Fitting Dummy (R6)',
+      shape: 'block',
+      position: [
+        Math.round((studioCamPosRef.current.x + Math.sin(studioCamYawRef.current) * 8) * 2) / 2,
+        3,
+        Math.round((studioCamPosRef.current.z - Math.cos(studioCamYawRef.current) * 8) * 2) / 2,
+      ],
+      size: [2, 5, 1],
+      rotation: [0, 0, 0],
+      color: '#e2e8f0',
+      material: 'SmoothPlastic',
+      transparency: 0,
+      reflectance: 0,
+      anchored: true,
+      canCollide: true,
+      isDummy: true,
+    };
+    setParts((prev) => [...prev, dummyPart]);
+    setSelectedPartId(id);
+    setSelectedItemType('part');
+    setToolMode('move');
+    showToast('Inserted Fitting Dummy Mannequin!');
+  };
+
+  const handleSaveCurrentModelAsAccessory = () => {
+    const selectedP = selectedPart;
+    const dummyP = parts.find((p) => p.isDummy) || parts[0];
+
+    let relPos: [number, number, number] = [0, 1.2, 0];
+    let relRot: [number, number, number] = [0, 0, 0];
+    let relScale: [number, number, number] = [1, 1, 1];
+
+    if (selectedP && dummyP) {
+      relPos = [
+        selectedP.position[0] - dummyP.position[0],
+        selectedP.position[1] - dummyP.position[1],
+        selectedP.position[2] - dummyP.position[2],
+      ];
+      relRot = [
+        THREE.MathUtils.degToRad(selectedP.rotation[0]),
+        THREE.MathUtils.degToRad(selectedP.rotation[1]),
+        THREE.MathUtils.degToRad(selectedP.rotation[2]),
+      ];
+      relScale = [selectedP.size[0] / 2, selectedP.size[1] / 2, selectedP.size[2] / 2];
+    }
+
+    const newItem: FittedAccessoryItem = {
+      id: `fitted-acc-${Date.now()}`,
+      name: modelTitle.trim() || 'Custom Accessory',
+      category: modelCategory,
+      creatorId: experience.creatorId || 'local-user',
+      creatorUsername: experience.creatorUsername || 'Creator',
+      createdAt: Date.now(),
+      price: modelBobuxPrice,
+      boughtCount: 0,
+      onSale: false,
+      meshType: 'primitive',
+      color: selectedP?.color || modelColor,
+      offset: {
+        parentBone: modelAttachmentTarget,
+        position: relPos,
+        rotation: relRot,
+        scale: relScale,
+      },
+    };
+
+    const updated = saveFittedAccessoryLocally(newItem);
+    setSavedFittedModels(updated);
+    setShowSaveAccessoryModal(false);
+    showToast(`Saved "${newItem.name}" to BoBlox Asset Manager!`);
+  };
+
+  const handlePublishAccessoryToMarketplace = async (item: FittedAccessoryItem) => {
+    setPublishingAccessory(true);
+    const result = await publishFittedAccessoryToMarketplace(item, experience.creatorUsername || 'Player');
+    setPublishingAccessory(false);
+    if (!result.success) {
+      alert(result.error || 'Failed to publish accessory.');
+    } else {
+      setShowMarketplacePublishModal(false);
+      setSavedFittedModels(getSavedFittedAccessories());
+      showToast(`Published "${item.name}" to Marketplace! Fee: ${ACCESSORY_UPLOAD_FEE} BOBUX.`);
+    }
   };
 
   const handleAddClickDetectorToPart = (partId: string) => {
@@ -2958,33 +3070,55 @@ end)`}
         </div>
 
         {/* Add Part Dropdown */}
-        <div className="relative">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => setInsertPartMenuOpen((p) => !p)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span>Add Part</span>
+              <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+            </button>
+
+            {insertPartMenuOpen && (
+              <div
+                className="absolute left-0 top-full mt-1.5 w-44 bg-[#191130] border border-purple-500/30 rounded-xl shadow-2xl p-1.5 space-y-1 z-50 animate-fadeIn"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {(['block', 'sphere', 'cylinder', 'wedge'] as PartShape[]).map((shape) => (
+                  <button
+                    key={shape}
+                    onClick={() => handleAddPart(shape)}
+                    className="w-full px-3 py-2 rounded-lg text-left text-xs capitalize text-white hover:bg-purple-600/30 flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <span>{shape}</span>
+                    <span className="text-[10px] text-purple-400/60 font-mono">3D</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Fitting Dummy button */}
           <button
-            onClick={() => setInsertPartMenuOpen((p) => !p)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+            onClick={handleAddFittingDummy}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#261a4c] hover:bg-[#342263] border border-purple-500/30 text-purple-100 font-bold text-xs transition-all cursor-pointer shadow-sm"
+            title="Insert R6 Fitting Dummy Mannequin"
           >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Add Part</span>
-            <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+            <Boxes className="w-4 h-4 text-purple-300" />
+            <span>Insert Dummy</span>
           </button>
 
-          {insertPartMenuOpen && (
-            <div
-              className="absolute left-0 top-full mt-1.5 w-44 bg-[#191130] border border-purple-500/30 rounded-xl shadow-2xl p-1.5 space-y-1 z-50 animate-fadeIn"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {(['block', 'sphere', 'cylinder', 'wedge'] as PartShape[]).map((shape) => (
-                <button
-                  key={shape}
-                  onClick={() => handleAddPart(shape)}
-                  className="w-full px-3 py-2 rounded-lg text-left text-xs capitalize text-white hover:bg-purple-600/30 flex items-center justify-between transition-colors cursor-pointer"
-                >
-                  <span>{shape}</span>
-                  <span className="text-[10px] text-purple-400/60 font-mono">3D</span>
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Save Model / Accessory button */}
+          <button
+            onClick={() => setShowSaveAccessoryModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+            title="Save model attached to Dummy as Hair / Accessory / Back Item"
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <span>Save Model to BoBlox</span>
+          </button>
         </div>
       </div>
 
@@ -3517,6 +3651,214 @@ end)`}
               >
                 <Upload className="w-4 h-4" />
                 <span>{isUploadingIcon ? 'Uploading...' : 'Upload Image'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3D Viewport Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-[#160f2e] border border-purple-500/40 rounded-2xl shadow-2xl p-2 w-64 text-xs space-y-1 animate-fadeIn"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-2 py-1 text-[10px] font-bold text-purple-300/70 border-b border-purple-500/20 uppercase tracking-wider flex items-center justify-between">
+            <span>BoBlox 3D Context Actions</span>
+            <button onClick={() => setContextMenu(null)} className="text-purple-400 hover:text-white cursor-pointer">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <button
+            onClick={() => {
+              setContextMenu(null);
+              setShowSaveAccessoryModal(true);
+            }}
+            className="w-full px-2.5 py-2 rounded-xl text-left font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 flex items-center gap-2 cursor-pointer shadow-md"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>Save Model to BoBlox Asset Hub</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setContextMenu(null);
+              handleAddFittingDummy();
+            }}
+            className="w-full px-2.5 py-1.5 rounded-lg text-left text-purple-200 hover:bg-purple-900/40 flex items-center gap-2 cursor-pointer"
+          >
+            <Boxes className="w-3.5 h-3.5 text-purple-400" />
+            <span>Insert R6 Fitting Dummy</span>
+          </button>
+
+          {contextMenu.partId && (
+            <>
+              <button
+                onClick={() => {
+                  const pid = contextMenu.partId!;
+                  setContextMenu(null);
+                  handleAddClickDetectorToPart(pid);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-lg text-left text-yellow-200 hover:bg-yellow-950/40 flex items-center gap-2 cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-yellow-400" />
+                <span>Insert ClickDetector</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const pid = contextMenu.partId!;
+                  setContextMenu(null);
+                  handleAddScriptToPart(pid);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-lg text-left text-blue-200 hover:bg-blue-950/40 flex items-center gap-2 cursor-pointer"
+              >
+                <FileCode className="w-3.5 h-3.5 text-blue-400" />
+                <span>Insert Script</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const pid = contextMenu.partId!;
+                  setContextMenu(null);
+                  handleDuplicatePart(pid);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-lg text-left text-purple-200 hover:bg-purple-900/40 flex items-center gap-2 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5 text-purple-400" />
+                <span>Duplicate Part</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const pid = contextMenu.partId!;
+                  setContextMenu(null);
+                  handleDeletePart(pid);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-lg text-left text-red-300 hover:bg-red-950/50 flex items-center gap-2 cursor-pointer border-t border-purple-500/20 pt-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                <span>Delete Part</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Save Model / Accessory Modal */}
+      {showSaveAccessoryModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setShowSaveAccessoryModal(false)}
+        >
+          <div
+            className="w-full max-w-lg bg-[#160f2e] border border-purple-500/30 rounded-2xl shadow-2xl p-6 space-y-4 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowSaveAccessoryModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-purple-400 hover:text-white hover:bg-purple-900/40 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-600/30 border border-purple-400/40 flex items-center justify-center text-purple-300">
+                <Sparkles className="w-5 h-5 text-amber-300" />
+              </div>
+              <div>
+                <h3 className="font-display font-extrabold text-lg text-white">
+                  Save Model to BoBlox Asset Hub
+                </h3>
+                <p className="text-xs text-purple-300/70">
+                  Save fitted 3D model relative to Dummy (Hair, Back Accessories, Hats, Gear)
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <div>
+                <label className="text-xs font-bold text-purple-200 block mb-1">Model / Item Title</label>
+                <input
+                  type="text"
+                  value={modelTitle}
+                  onChange={(e) => setModelTitle(e.target.value)}
+                  placeholder="e.g. Demon Wings, Sword, Anime Spiky Hair"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#1d153a] border border-purple-500/30 text-white text-xs focus:outline-none focus:border-purple-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-purple-200 block mb-1">Asset Category</label>
+                  <select
+                    value={modelCategory}
+                    onChange={(e) => setModelCategory(e.target.value as AccessoryCategory)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-[#1d153a] border border-purple-500/30 text-white text-xs focus:outline-none capitalize"
+                  >
+                    <option value="hair">Hair</option>
+                    <option value="back">Back Accessory (Wings, Swords, Capes)</option>
+                    <option value="hat">Hat / Head Item</option>
+                    <option value="face">Face Accessory (Glasses, Masks)</option>
+                    <option value="shoulder">Shoulder Pet</option>
+                    <option value="waist">Waist Accessory</option>
+                    <option value="gear">Gear</option>
+                    <option value="custom">Custom Accessory</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-purple-200 block mb-1">Attachment Bone</label>
+                  <select
+                    value={modelAttachmentTarget}
+                    onChange={(e) => setModelAttachmentTarget(e.target.value as AttachmentBone)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-[#1d153a] border border-purple-500/30 text-white text-xs focus:outline-none"
+                  >
+                    <option value="Head">Head</option>
+                    <option value="Back">Back / Torso</option>
+                    <option value="Torso">Front Torso</option>
+                    <option value="LeftArm">Left Arm</option>
+                    <option value="RightArm">Right Arm</option>
+                    <option value="LeftLeg">Left Leg</option>
+                    <option value="RightLeg">Right Leg</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-purple-200 block mb-1">Primary Color</label>
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-[#1d153a] border border-purple-500/30">
+                  <input
+                    type="color"
+                    value={modelColor}
+                    onChange={(e) => setModelColor(e.target.value)}
+                    className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                  />
+                  <span className="font-mono text-xs text-white uppercase">{modelColor}</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-500/20 text-xs text-purple-300">
+                💡 <span className="font-bold text-white">Pro Tip:</span> Models saved here can be uploaded to the BoBlox Marketplace under "My Models" for <span className="font-bold text-amber-300">100 BOBUX</span> and equipped by any player!
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-purple-500/20">
+              <button
+                type="button"
+                onClick={() => setShowSaveAccessoryModal(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-purple-300 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCurrentModelAsAccessory}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-900/50 cursor-pointer"
+              >
+                Save Model to Asset Hub
               </button>
             </div>
           </div>

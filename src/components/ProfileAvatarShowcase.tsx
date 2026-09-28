@@ -7,6 +7,8 @@ import { attachPantsToLimbs } from '../utils/pantsTexture';
 import { createHairMesh, createHairMeshAsync } from '../utils/hairMesh';
 import { createAccessoryMesh } from '../utils/accessoryMesh';
 import { getAvatar3DSnapshot } from '../utils/avatar3DSnapshot';
+import { getEquippedCustomAccessories } from '../types/fittedAccessories';
+import { attachFittedAccessoriesToAvatar } from '../utils/fittedModelRenderer';
 
 interface ProfileAvatarShowcaseProps {
   colors?: AvatarColors;
@@ -241,6 +243,18 @@ export default function ProfileAvatarShowcase({
     if (pantsDataUrl) {
       detachPants = attachPantsToLimbs(torsoMesh, leftLegGroup, rightLegGroup, pantsDataUrl);
     }
+
+    try {
+      const equippedCustom = getEquippedCustomAccessories();
+      attachFittedAccessoriesToAvatar(characterGroup, equippedCustom, {
+        head: headGroup,
+        torso: torsoMesh,
+        leftArm: leftArmGroup,
+        rightArm: rightArmGroup,
+        leftLeg: leftLegGroup,
+        rightLeg: rightLegGroup,
+      });
+    } catch (e) {}
 
     // 5. Animation Loop with Smooth Spinning
     const animate = () => {

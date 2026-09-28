@@ -269,10 +269,21 @@ export default function BulkClothingUploader({
   // Handle Upload Everything & Publish to Marketplace via Cloudinary
   const handleUploadEverything = async () => {
     if (totalValidItems === 0) return;
+
+    // Check 100 Bobux Upload Fee
+    const { getSavedBobux, saveBobux } = await import('./BobuxCurrency');
+    const userBobux = getSavedBobux(currentUser.username);
+    if (userBobux < 100) {
+      alert(`Uploading clothing costs 100 BOBUX. You currently have ${userBobux} BOBUX. Claim your daily Bobux or earn more to upload!`);
+      return;
+    }
+
     setIsUploading(true);
     setUploadProgress(5);
 
     try {
+      // Deduct 100 Bobux fee
+      saveBobux(userBobux - 100, currentUser.username);
       const now = Date.now();
       const totalSteps = totalValidItems * 2; // texture + preview for each
       let currentStep = 0;
@@ -830,7 +841,7 @@ export default function BulkClothingUploader({
                   : 'text-white/60 hover:text-white'
               }`}
             >
-              Free (0 R$)
+              Free (0 B$)
             </button>
             <button
               type="button"
@@ -845,7 +856,7 @@ export default function BulkClothingUploader({
             </button>
             {batchPriceType === 'bobux' && (
               <div className="flex items-center gap-1 pl-1 pr-2">
-                <span className="text-amber-400 font-bold text-xs">R$</span>
+                <span className="text-amber-400 font-bold text-xs">B$</span>
                 <input
                   type="number"
                   min={1}

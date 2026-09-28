@@ -26,6 +26,8 @@ import { attachShirtToLimbs } from '../utils/shirtTexture';
 import { attachPantsToLimbs } from '../utils/pantsTexture';
 import { createAccessoryMesh } from '../utils/accessoryMesh';
 import { createHairMesh, createHairMeshAsync } from '../utils/hairMesh';
+import { getEquippedCustomAccessories } from '../types/fittedAccessories';
+import { attachFittedAccessoriesToAvatar } from '../utils/fittedModelRenderer';
 import { ExperienceData, StudioPart, StudioScript } from '../types/experience';
 import { applyTextureProperties } from '../utils/textureMapping';
 import { RagdollShatterManager } from '../utils/ragdollShatter';
@@ -269,6 +271,21 @@ function createR6Character({
 
   const detachShirt = attachShirtToLimbs(torso, leftArmGroup, rightArmGroup, shirtUrl);
   const detachPants = attachPantsToLimbs(torso, leftLegGroup, rightLegGroup, pantsUrl);
+
+  // Attach equipped custom 3D models (wings, hair, hats, backpacks, swords, etc.)
+  try {
+    const equippedCustom = getEquippedCustomAccessories();
+    attachFittedAccessoriesToAvatar(characterGroup, equippedCustom, {
+      head: headGroup,
+      torso: torso,
+      leftArm: leftArmGroup,
+      rightArm: rightArmGroup,
+      leftLeg: leftLegGroup,
+      rightLeg: rightLegGroup,
+    });
+  } catch (e) {
+    // ignore
+  }
 
   return {
     characterGroup,

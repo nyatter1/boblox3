@@ -58,6 +58,7 @@ export interface StudioPart {
   textures?: PartFaceTextures;
   textureProperties?: TextureProperties;
   scripts?: StudioScript[];
+  isDummy?: boolean;
 }
 
 export interface ExperienceData {

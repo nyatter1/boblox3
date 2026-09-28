@@ -48,6 +48,12 @@ import { validatePantsTemplate, generateBlankRobloxPantsTemplateDataUrl } from '
 import { generateShirt2DFrontPreview, generatePants2DFrontPreview } from '../utils/preview2D';
 import { uploadToCloudinary } from '../services/cloudinary';
 import BulkClothingUploader from './BulkClothingUploader';
+import {
+  FittedAccessoryItem,
+  getSavedFittedAccessories,
+  publishFittedAccessoryToMarketplace,
+  ACCESSORY_UPLOAD_FEE,
+} from '../types/fittedAccessories';
 
 interface BoBloxStudioProps {
   currentUser: UserProfile;
@@ -68,7 +74,7 @@ interface BoBloxStudioProps {
   onOpenMarketplace?: () => void;
 }
 
-type StudioTab = 'experiences' | 'avatar-items' | 'bulk-upload';
+type StudioTab = 'experiences' | 'avatar-items' | 'my-models' | 'bulk-upload';
 
 export default function BoBloxStudio({
   currentUser,
@@ -99,6 +105,12 @@ export default function BoBloxStudio({
   // Avatar Items Inventory State
   const [savedShirts, setSavedShirts] = useState<CustomClothingItem[]>(getSavedShirtsInventory);
   const [savedPants, setSavedPants] = useState<CustomClothingItem[]>(getSavedPantsInventory);
+  const [savedFittedModels, setSavedFittedModels] = useState<FittedAccessoryItem[]>(getSavedFittedAccessories);
+
+  // Model Marketplace Upload Modal State
+  const [selectedModelForUpload, setSelectedModelForUpload] = useState<FittedAccessoryItem | null>(null);
+  const [uploadBobuxPrice, setUploadBobuxPrice] = useState<number>(0);
+  const [uploadingModel, setUploadingModel] = useState<boolean>(false);
 
   // Shirt Creation Form State
   const [shirtName, setShirtName] = useState('');
@@ -444,6 +456,24 @@ export default function BoBloxStudio({
             <span>Avatar Items</span>
             <span className="text-[11px] px-1.5 py-0.2 rounded-md bg-black/30 text-purple-200">
               {savedShirts.length + savedPants.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setSavedFittedModels(getSavedFittedAccessories());
+              setActiveTab('my-models');
+            }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer shrink-0 ${
+              activeTab === 'my-models'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                : 'text-purple-300/70 hover:text-white hover:bg-purple-950/40'
+            }`}
+          >
+            <Boxes className="w-4 h-4 text-amber-400" />
+            <span>My Models</span>
+            <span className="text-[11px] px-1.5 py-0.2 rounded-md bg-black/30 text-purple-200 font-mono">
+              {savedFittedModels.length}
             </span>
           </button>
 
@@ -931,7 +961,195 @@ export default function BoBloxStudio({
         </div>
       )}
 
-      {/* ================= TAB 3: BULK CLOTHING UPLOADER ================= */}
+      {/* ================= TAB 3: MY MODELS (FITTED 3D ACCESSORIES & HAIR) ================= */}
+      {activeTab === 'my-models' && (
+        <div className="space-y-6">
+          <div className="p-6 rounded-2xl bg-gradient-to-r from-purple-950/60 via-[#1b1236] to-[#100a22] border border-purple-500/25 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-purple-500/30 shrink-0">
+                <Boxes className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-display font-extrabold text-white flex items-center gap-2">
+                  <span>My Fitted 3D Models</span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-mono font-bold border border-amber-400/30">
+                    ASSET HUB
+                  </span>
+                </h2>
+                <p className="text-xs text-purple-300/80 mt-0.5">
+                  Models fitted on the Dummy in Studio. Upload your custom Hair, Hats, Back Accessories (wings, swords, backpacks) to the BoBlox Marketplace for <span className="font-bold text-amber-300">100 BOBUX</span>!
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setSavedFittedModels(getSavedFittedAccessories());
+              }}
+              className="px-4 py-2 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 text-xs font-bold transition-colors cursor-pointer"
+            >
+              Refresh Models
+            </button>
+          </div>
+
+          {savedFittedModels.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {savedFittedModels.map((model) => (
+                <div
+                  key={model.id}
+                  className="rounded-2xl bg-[#16102c] border border-purple-500/20 p-4 space-y-3 flex flex-col justify-between shadow-lg hover:border-purple-400/40 transition-all"
+                >
+                  <div>
+                    <div className="aspect-square w-full rounded-xl bg-[#100a20] border border-white/10 flex flex-col items-center justify-center p-3 relative overflow-hidden">
+                      <div
+                        className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg border border-white/20"
+                        style={{ backgroundColor: model.color || '#a855f7' }}
+                      >
+                        <Sparkles className="w-8 h-8 text-white" />
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-900/60 text-purple-200 font-bold uppercase mt-3">
+                        {model.category} • {model.offset?.parentBone || 'Head'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3">
+                      <h3 className="font-bold text-white text-sm truncate">{model.name}</h3>
+                      <p className="text-[11px] text-purple-300/70 mt-0.5">
+                        By @{model.creatorUsername || currentUser.username}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-purple-500/15 flex items-center justify-between gap-2">
+                    <span className="text-xs font-mono font-bold text-amber-300">
+                      {model.price > 0 ? `${model.price} BOBUX` : 'Free'}
+                    </span>
+
+                    <button
+                      onClick={() => {
+                        setSelectedModelForUpload(model);
+                        setUploadBobuxPrice(model.price || 0);
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload (100 BOBUX)</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-12 text-center rounded-2xl bg-[#140e28] border border-purple-500/20 space-y-3">
+              <Boxes className="w-12 h-12 text-purple-400/40 mx-auto" />
+              <h3 className="text-lg font-bold text-white">No Fitted Models Yet</h3>
+              <p className="text-xs text-purple-300/70 max-w-md mx-auto">
+                Open any experience in 3D Studio, click "Insert Dummy", attach a 3D model, and right-click to "Save Model to BoBlox"!
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Model Marketplace Upload Dialog */}
+      {selectedModelForUpload && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setSelectedModelForUpload(null)}
+        >
+          <div
+            className="w-full max-w-md bg-[#160f2e] border border-purple-500/30 rounded-2xl shadow-2xl p-6 space-y-4 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSelectedModelForUpload(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-purple-400 hover:text-white hover:bg-purple-900/40 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-600/30 border border-purple-400/40 flex items-center justify-center text-purple-300">
+                <Upload className="w-5 h-5 text-amber-300" />
+              </div>
+              <div>
+                <h3 className="font-display font-extrabold text-base text-white">
+                  Upload Model to BoBlox Marketplace
+                </h3>
+                <p className="text-xs text-purple-300/70">
+                  Listing fee: <span className="font-bold text-amber-300">100 BOBUX</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-500/20 space-y-2 text-xs">
+              <div className="flex justify-between text-purple-200">
+                <span>Model Name:</span>
+                <span className="font-bold text-white">{selectedModelForUpload.name}</span>
+              </div>
+              <div className="flex justify-between text-purple-200">
+                <span>Category:</span>
+                <span className="font-bold text-amber-300 capitalize">{selectedModelForUpload.category}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-purple-200 block mb-1.5">Marketplace Selling Price</label>
+              <div className="flex items-center gap-2">
+                <span className="text-amber-400 font-bold text-sm">B$</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={1000000}
+                  value={uploadBobuxPrice}
+                  onChange={(e) => setUploadBobuxPrice(Math.max(0, parseInt(e.target.value) || 0))}
+                  placeholder="0 for Free"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#1d153a] border border-purple-500/30 text-white font-mono text-sm focus:outline-none focus:border-purple-400"
+                />
+              </div>
+              <p className="text-[10px] text-purple-400/70 mt-1">Set to 0 for Free or enter Bobux price to earn Bobux from buyers!</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-purple-500/20">
+              <button
+                type="button"
+                onClick={() => setSelectedModelForUpload(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-purple-300 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={uploadingModel}
+                onClick={async () => {
+                  setUploadingModel(true);
+                  const updatedItem = {
+                    ...selectedModelForUpload,
+                    price: uploadBobuxPrice,
+                    onSale: true,
+                  };
+                  const res = await publishFittedAccessoryToMarketplace(updatedItem, currentUser.username);
+                  setUploadingModel(false);
+                  if (!res.success) {
+                    alert(res.error || 'Upload failed');
+                  } else {
+                    setSelectedModelForUpload(null);
+                    setSavedFittedModels(getSavedFittedAccessories());
+                    alert(`Successfully uploaded "${updatedItem.name}" to Marketplace! Remaining balance: ${res.remainingBobux} BOBUX.`);
+                  }
+                }}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold text-xs shadow-lg shadow-purple-900/50 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                <span>{uploadingModel ? 'Uploading...' : 'Confirm Upload (100 BOBUX)'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= TAB 4: BULK CLOTHING UPLOADER ================= */}
       {activeTab === 'bulk-upload' &&
         (isVerifiedUser(currentUser?.username) ||
           isOwnerUser(currentUser?.username) ||

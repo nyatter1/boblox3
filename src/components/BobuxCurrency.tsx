@@ -266,14 +266,14 @@ export default function BobuxCurrency({
               />
             </div>
 
-            {/* The Robux Amount */}
+            {/* The Bobux Amount */}
             <div className="pt-0.5">
               <p className="text-2xl font-display font-black text-white tracking-tight tabular-nums">
                 {bobux.toLocaleString()}
               </p>
-              {/* Robux / Bobux Label */}
+              {/* Bobux Label */}
               <p className="text-[11px] font-bold tracking-wider text-purple-300/80 uppercase mt-0.5">
-                Robux
+                Bobux
               </p>
             </div>
 
@@ -307,7 +307,7 @@ export default function BobuxCurrency({
                 className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md shadow-purple-600/30 hover:shadow-purple-600/50 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>Transfer Robux</span>
+                <span>Transfer Bobux</span>
               </button>
             </div>
           </div>
@@ -337,8 +337,8 @@ export default function BobuxCurrency({
                 <img src={bobuxImg} alt="Bobux" className="w-full h-full object-contain" />
               </div>
               <div>
-                <h3 className="text-lg font-display font-black text-white">Transfer Robux</h3>
-                <p className="text-xs text-purple-300/70">Send Robux directly to another player</p>
+                <h3 className="text-lg font-display font-black text-white">Transfer Bobux</h3>
+                <p className="text-xs text-purple-300/70">Send Bobux directly to another player</p>
               </div>
             </div>
 

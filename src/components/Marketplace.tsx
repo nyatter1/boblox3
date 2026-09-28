@@ -39,6 +39,12 @@ import { getFaceTexture } from '../utils/faceTexture';
 import { attachShirtToLimbs } from '../utils/shirtTexture';
 import { attachPantsToLimbs } from '../utils/pantsTexture';
 import { createHairMesh } from '../utils/hairMesh';
+import {
+  FittedAccessoryItem,
+  getMarketplaceFittedAccessories,
+  buyFittedAccessory,
+  equipCustomAccessory,
+} from '../types/fittedAccessories';
 
 interface MarketplaceProps {
   currentUser: UserProfile;
@@ -72,8 +78,9 @@ export default function Marketplace({
   onNavigateToUserProfile,
 }: MarketplaceProps) {
   const [items, setItems] = useState<MarketplaceClothingItem[]>([]);
+  const [customAccessories, setCustomAccessories] = useState<FittedAccessoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState<'all' | 'shirt' | 'pants'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'shirt' | 'pants' | 'accessories'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'popular' | 'newest'>('popular');
   const [invalidItemIds, setInvalidItemIds] = useState<Set<string>>(new Set());
@@ -112,6 +119,10 @@ export default function Marketplace({
         setItems(saved);
         setLoading(false);
       }
+    });
+
+    getMarketplaceFittedAccessories().then((accs) => {
+      if (isMounted) setCustomAccessories(accs);
     });
 
     const handleMarketplaceUpdate = () => {
