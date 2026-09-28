@@ -481,7 +481,7 @@ export function saveExperiences(experiences: ExperienceData[]) {
 
 export function calculateRatingPercentage(likes: number, dislikes: number): number {
   const total = (likes || 0) + (dislikes || 0);
-  if (total === 0) return 96; // fallback optimistic default
+  if (total === 0) return 0;
   return Math.round(((likes || 0) / total) * 100);
 }
 
